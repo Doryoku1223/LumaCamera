@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 颜色定义 -->
+    
+    <!-- 主色调 - 金黄色 -->
+    <color name="luma_gold">#FFD700</color>
+    <color name="luma_gold_light">#FFE44D</color>
+    <color name="luma_gold_dark">#CCAB00</color>
+    
+    <!-- 背景色 - 纯黑 -->
+    <color name="luma_black">#000000</color>
+    <color name="luma_surface">#0D0D0D</color>
+    <color name="luma_surface_variant">#1A1A1A</color>
+    
+    <!-- 文字颜色 -->
+    <color name="luma_on_background">#FFFFFF</color>
+    <color name="luma_on_background_secondary">#B3FFFFFF</color>
+    <color name="luma_on_background_tertiary">#80FFFFFF</color>
+    
+    <!-- 控件颜色 -->
+    <color name="luma_outline">#333333</color>
+    <color name="luma_outline_variant">#262626</color>
+    
+    <!-- 状态颜色 -->
+    <color name="luma_error">#FF4444</color>
+    <color name="luma_success">#44FF44</color>
+    <color name="luma_warning">#FFAA00</color>
+    
+    <!-- 半透明叠加 -->
+    <color name="luma_overlay">#80000000</color>
+    <color name="luma_overlay_light">#40000000</color>
+    <color name="luma_overlay_dark">#CC000000</color>
+    
+    <!-- 峰值对焦颜色 -->
+    <color name="focus_peaking_red">#FF0000</color>
+    <color name="focus_peaking_yellow">#FFFF00</color>
+    <color name="focus_peaking_blue">#0088FF</color>
+    <color name="focus_peaking_white">#FFFFFF</color>
+</resources>

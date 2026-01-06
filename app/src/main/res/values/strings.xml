@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Luma Camera</string>
+    
+    <!-- 相机模式 -->
+    <string name="mode_auto">自动</string>
+    <string name="mode_pro">专业</string>
+    <string name="mode_photo">照片</string>
+    <string name="mode_video">视频</string>
+    <string name="mode_night">夜景</string>
+    <string name="mode_portrait">人像</string>
+    <string name="mode_long_exposure">长曝光</string>
+    
+    <!-- 焦段 -->
+    <string name="focal_ultra_wide">0.5x</string>
+    <string name="focal_main">1x</string>
+    <string name="focal_tele">3x</string>
+    <string name="focal_periscope">6x</string>
+    
+    <!-- 闪光灯 -->
+    <string name="flash_off">关闭</string>
+    <string name="flash_auto">自动</string>
+    <string name="flash_on">开启</string>
+    <string name="flash_torch">常亮</string>
+    
+    <!-- 画面比例 -->
+    <string name="ratio_4_3">4:3</string>
+    <string name="ratio_16_9">16:9</string>
+    <string name="ratio_1_1">1:1</string>
+    <string name="ratio_full">全屏</string>
+    
+    <!-- Live Photo -->
+    <string name="live_photo">实况照片</string>
+    <string name="live_photo_on">实况照片已开启</string>
+    <string name="live_photo_off">实况照片已关闭</string>
+    
+    <!-- 滤镜 -->
+    <string name="filter">滤镜</string>
+    <string name="filter_original">原图</string>
+    <string name="filter_intensity">滤镜强度</string>
+    <string name="filter_import">导入 LUT</string>
+    <string name="filter_import_batch">批量导入</string>
+    <string name="filter_manage">管理滤镜</string>
+    
+    <!-- Pro 模式参数 -->
+    <string name="param_ev">曝光补偿</string>
+    <string name="param_iso">ISO</string>
+    <string name="param_shutter">快门</string>
+    <string name="param_wb">白平衡</string>
+    <string name="param_focus">对焦</string>
+    <string name="param_auto">自动</string>
+    <string name="param_manual">手动</string>
+    
+    <!-- 白平衡预设 -->
+    <string name="wb_auto">自动</string>
+    <string name="wb_daylight">日光</string>
+    <string name="wb_cloudy">阴天</string>
+    <string name="wb_tungsten">白炽灯</string>
+    <string name="wb_fluorescent">荧光灯</string>
+    <string name="wb_shade">阴影</string>
+    <string name="wb_custom">自定义</string>
+    
+    <!-- 辅助功能 -->
+    <string name="focus_peaking">峰值对焦</string>
+    <string name="histogram">直方图</string>
+    <string name="grid_lines">网格线</string>
+    <string name="level">水平仪</string>
+    <string name="timer">倒计时</string>
+    
+    <!-- 网格线选项 -->
+    <string name="grid_none">无</string>
+    <string name="grid_rule_of_thirds">三分线</string>
+    <string name="grid_golden_ratio">黄金分割</string>
+    <string name="grid_diagonal">对角线</string>
+    <string name="grid_center_cross">中心十字</string>
+    
+    <!-- 输出格式 -->
+    <string name="format_jpeg">JPEG</string>
+    <string name="format_heif">HEIF</string>
+    <string name="format_raw">RAW</string>
+    <string name="format_raw_jpeg">RAW+JPEG</string>
+    
+    <!-- 设置页面 -->
+    <string name="settings">设置</string>
+    <string name="settings_general">通用设置</string>
+    <string name="settings_capture">拍摄辅助</string>
+    <string name="settings_privacy">隐私设置</string>
+    <string name="settings_about">关于相机</string>
+    <string name="settings_save_flat">保存灰片</string>
+    <string name="settings_save_flat_desc">同时保存 Luma 灰片供二次调色</string>
+    <string name="settings_output_format">输出格式</string>
+    <string name="settings_focal_display">焦距显示</string>
+    <string name="settings_focal_equivalent">等效焦距</string>
+    <string name="settings_focal_multiplier">实际倍率</string>
+    <string name="settings_storage_path">存储路径</string>
+    <string name="settings_exif">EXIF 信息</string>
+    <string name="settings_exif_location">地理位置</string>
+    <string name="settings_exif_params">拍摄参数</string>
+    <string name="settings_exif_device">设备信息</string>
+    <string name="settings_exif_filter">滤镜名称</string>
+    
+    <!-- 峰值对焦颜色 -->
+    <string name="peaking_red">红色</string>
+    <string name="peaking_yellow">黄色</string>
+    <string name="peaking_blue">蓝色</string>
+    <string name="peaking_white">白色</string>
+    
+    <!-- 直方图位置 -->
+    <string name="histogram_top_left">左上</string>
+    <string name="histogram_top_right">右上</string>
+    <string name="histogram_bottom_left">左下</string>
+    <string name="histogram_bottom_right">右下</string>
+    
+    <!-- 倒计时选项 -->
+    <string name="timer_off">关闭</string>
+    <string name="timer_3s">3秒</string>
+    <string name="timer_5s">5秒</string>
+    <string name="timer_10s">10秒</string>
+    
+    <!-- 权限请求 -->
+    <string name="permission_camera_title">需要相机权限</string>
+    <string name="permission_camera_message">Luma Camera 需要相机权限才能拍摄照片</string>
+    <string name="permission_audio_title">需要麦克风权限</string>
+    <string name="permission_audio_message">实况照片需要麦克风权限录制音频</string>
+    <string name="permission_location_title">需要位置权限</string>
+    <string name="permission_location_message">需要位置权限记录照片的拍摄地点</string>
+    <string name="permission_grant">授予权限</string>
+    <string name="permission_deny">拒绝</string>
+    
+    <!-- 通用操作 -->
+    <string name="action_save">保存</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_delete">删除</string>
+    <string name="action_rename">重命名</string>
+    <string name="action_share">分享</string>
+    <string name="action_reset">重置</string>
+    <string name="action_back">返回</string>
+    
+    <!-- 关于 -->
+    <string name="about_version">版本 %s</string>
+    <string name="about_description">专业级相机应用，面向摄影爱好者</string>
+    
+    <!-- 反馈 -->
+    <string name="feedback_title">反馈</string>
+    <string name="feedback_send">发送反馈</string>
+    <string name="feedback_bug_report">报告问题</string>
+    <string name="feedback_feature_request">功能建议</string>
+    <string name="feedback_rate">评分</string>
+    
+    <!-- 错误 -->
+    <string name="error_camera_unavailable">相机不可用</string>
+    <string name="error_save_failed">保存照片失败</string>
+    <string name="error_no_storage">存储空间不足</string>
+    
+    <!-- Toast 消息 -->
+    <string name="toast_photo_saved">照片已保存</string>
+    <string name="toast_settings_saved">设置已保存</string>
+    <string name="toast_lut_imported">LUT 导入成功</string>
+</resources>

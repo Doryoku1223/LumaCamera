@@ -1,0 +1,108 @@
+# Luma Camera 开发规范
+
+## 项目概述
+Luma Camera 是一款专业级 Android 相机应用，面向摄影爱好者，核心特性是 Luma Imaging Engine 影像处理引擎。
+
+## 技术栈
+- 语言: Kotlin 1.9+
+- UI: Jetpack Compose + Material3
+- 架构: MVVM + Clean Architecture
+- DI: Hilt
+- 相机: Camera2 API
+- 渲染: OpenGL ES 3.0
+
+## 目录结构
+
+```
+app/src/main/java/com/luma/camera/
+├── LumaCameraApp.kt          # Application
+├── MainActivity.kt           # 主 Activity
+├── camera/                   # 相机模块
+│   ├── CameraController.kt   # Camera2 控制器
+│   ├── MultiCameraManager.kt # 多摄管理
+│   └── CaptureManager.kt     # 拍照管理
+├── imaging/                  # Luma Imaging Engine
+│   ├── LumaImagingEngine.kt  # 主入口
+│   ├── RawProcessor.kt       # RAW 处理
+│   ├── DetailPreserver.kt    # 细节保留
+│   ├── DynamicRangeOptimizer.kt # 动态范围
+│   ├── ColorFidelity.kt      # 色彩保真
+│   ├── LumaLogCurve.kt       # Log 曲线
+│   ├── FlatProfileGenerator.kt # 灰片生成
+│   └── ImageQualityAnalyzer.kt # 质量分析
+├── lut/                      # LUT 滤镜引擎
+│   ├── LutParser.kt          # LUT 解析
+│   ├── LutManager.kt         # LUT 管理
+│   └── GpuLutRenderer.kt     # GPU 渲染
+├── livephoto/                # 实况照片
+├── presentation/             # UI 层
+│   ├── theme/                # 主题
+│   ├── navigation/           # 导航
+│   ├── screen/               # 页面
+│   │   ├── camera/           # 相机界面
+│   │   └── settings/         # 设置页面
+│   ├── viewmodel/            # ViewModel
+│   └── components/           # 可复用组件
+├── domain/                   # 领域层
+│   └── model/                # 领域模型
+├── data/                     # 数据层
+│   └── repository/           # 仓库
+├── di/                       # 依赖注入
+└── utils/                    # 工具类
+```
+
+## 代码规范
+
+### 命名规范
+- 类名: PascalCase (如 `CameraController`)
+- 函数/变量: camelCase (如 `capturePhoto`)
+- 常量: SCREAMING_SNAKE_CASE (如 `MAX_ISO`)
+- 文件名与类名一致
+
+### Compose 规范
+- Composable 函数首字母大写
+- State 使用 `remember` 或 `mutableStateOf`
+- 副作用使用 `LaunchedEffect`, `DisposableEffect`
+- Preview 函数添加 `@Preview` 注解
+
+### 架构规范
+- ViewModel 使用 `@HiltViewModel` 注解
+- 依赖注入使用构造函数注入
+- 状态使用 `StateFlow`
+- 事件使用 suspend 函数或回调
+
+### 性能规范
+- 相机操作在独立线程
+- 图像处理使用 GPU 加速
+- 避免在主线程进行 IO 操作
+- 使用 `remember` 避免重复计算
+
+## UI 设计规范
+
+### 颜色
+- 背景: 纯黑 #000000
+- 强调色: 金黄色 #FFD700
+- 文字: 白色 #FFFFFF
+- 次要文字: 70% 白色
+
+### 动画
+- 时长: 200-300ms
+- 缓动: FastOutSlowInEasing
+- 反馈: 触觉反馈
+
+### 图标
+- 风格: 线性
+- 尺寸: 24dp
+- 颜色: 未激活白色，激活金黄色
+
+## 性能目标
+- 取景器: 120fps
+- 快门响应: < 50ms
+- LUT 切换: < 16ms
+- 完整处理: < 1.5s
+- 冷启动: < 400ms
+
+## Git 规范
+- 分支: feature/xxx, bugfix/xxx
+- 提交信息: 类型(范围): 描述
+- 类型: feat, fix, refactor, style, docs, test

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Luma 水印矢量图
+    简化版本，适用于 Android VectorDrawable
+    原始设计来自 Luma-shuiy.svg
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp"
+    android:height="42dp"
+    android:viewportWidth="2000"
+    android:viewportHeight="420">
+
+    <!-- Logo 背景环 (简化为纯色) -->
+    <group
+        android:translateX="90"
+        android:translateY="100"
+        android:scaleX="0.215"
+        android:scaleY="0.215">
+        
+        <!-- 后环 - 青色渐变简化为主色 -->
+        <path
+            android:pathData="M310,560 C310,420 420,330 540,330 C670,330 770,430 770,548 C770,660 686,736 580,744 C468,752 390,690 360,630 C430,660 510,662 574,640 C650,614 692,560 690,510 C688,448 640,400 570,398 C500,396 450,440 432,500 C410,584 458,652 520,686 C420,700 310,650 310,560Z"
+            android:fillColor="#57F2C1"
+            android:fillAlpha="0.92"/>
+
+        <!-- 前环 - 紫色渐变简化为主色 -->
+        <path
+            android:pathData="M714,464 C714,604 604,694 484,694 C354,694 254,594 254,476 C254,364 338,288 444,280 C556,272 634,334 664,394 C594,364 514,362 450,384 C374,410 332,464 334,514 C336,576 384,624 454,626 C524,628 574,584 592,524 C614,440 566,372 504,338 C604,324 714,374 714,464Z"
+            android:fillColor="#7C5CFF"
+            android:fillAlpha="0.88"/>
+
+        <!-- 高光 -->
+        <path
+            android:pathData="M320,520 C340,420 420,360 520,352"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="22"
+            android:strokeAlpha="0.55"
+            android:strokeLineCap="round"
+            android:fillColor="#00000000"/>
+    </group>
+
+    <!-- 分隔线 -->
+    <path
+        android:pathData="M370,130 L370,290"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeAlpha="0.28"/>
+
+    <!-- "Luma" 文字 (使用路径绘制) -->
+    <!-- L -->
+    <path
+        android:pathData="M420,100 L420,270 L520,270 L520,250 L445,250 L445,100 Z"
+        android:fillColor="#FFFFFF"/>
+    
+    <!-- u -->
+    <path
+        android:pathData="M540,150 L540,230 Q540,260 570,260 Q600,260 600,230 L600,150 L625,150 L625,235 Q625,280 570,280 Q515,280 515,235 L515,150 Z"
+        android:fillColor="#FFFFFF"/>
+    
+    <!-- m -->
+    <path
+        android:pathData="M650,150 L650,270 L675,270 L675,180 Q680,160 700,160 Q720,160 720,180 L720,270 L745,270 L745,180 Q750,160 770,160 Q790,160 790,180 L790,270 L815,270 L815,175 Q815,150 790,150 Q765,150 752,165 Q740,150 715,150 Q690,150 675,165 L675,150 Z"
+        android:fillColor="#FFFFFF"/>
+    
+    <!-- a -->
+    <path
+        android:pathData="M840,200 Q840,150 885,150 Q930,150 930,200 L930,270 L905,270 L905,255 Q890,275 865,275 Q835,275 835,245 Q835,215 870,215 L905,215 L905,200 Q905,175 885,175 Q865,175 865,195 L840,195 Z M905,235 L875,235 Q860,235 860,250 Q860,260 875,260 Q905,260 905,235 Z"
+        android:fillColor="#FFFFFF"/>
+
+    <!-- 装饰点 -->
+    <path
+        android:pathData="M810,212 m-6,0 a6,6 0,1 1,12 0 a6,6 0,1 1,-12 0"
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.55"/>
+</vector>

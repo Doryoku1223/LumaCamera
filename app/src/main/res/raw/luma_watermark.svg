@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="420" viewBox="0 0 2000 420">
+  <defs>
+    <!-- Logo gradients (from your SVG) -->
+    <linearGradient id="k1" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#39D5FF"/>
+      <stop offset="0.52" stop-color="#57F2C1"/>
+      <stop offset="1" stop-color="#B7FF5A"/>
+    </linearGradient>
+
+    <linearGradient id="k2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7C5CFF"/>
+      <stop offset="0.6" stop-color="#39D5FF"/>
+      <stop offset="1" stop-color="#FF6FB1"/>
+    </linearGradient>
+
+    <filter id="kShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000000" flood-opacity="0.22"/>
+    </filter>
+
+    <filter id="kBlur" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+
+    <!-- Watermark text subtle shadow -->
+    <filter id="tShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Transparent background (do nothing) -->
+
+  <!-- Logo: scaled down from 1024 to ~220px -->
+  <g transform="translate(90 100) scale(0.215)">
+    <g filter="url(#kShadow)">
+      <!-- Back loop -->
+      <path d="M310 560
+               C310 420 420 330 540 330
+               C670 330 770 430 770 548
+               C770 660 686 736 580 744
+               C468 752 390 690 360 630
+               C430 660 510 662 574 640
+               C650 614 692 560 690 510
+               C688 448 640 400 570 398
+               C500 396 450 440 432 500
+               C410 584 458 652 520 686
+               C420 700 310 650 310 560Z"
+            fill="url(#k1)" opacity="0.92"/>
+
+      <!-- Front loop (crossing) -->
+      <path d="M714 464
+               C714 604 604 694 484 694
+               C354 694 254 594 254 476
+               C254 364 338 288 444 280
+               C556 272 634 334 664 394
+               C594 364 514 362 450 384
+               C374 410 332 464 334 514
+               C336 576 384 624 454 626
+               C524 628 574 584 592 524
+               C614 440 566 372 504 338
+               C604 324 714 374 714 464Z"
+            fill="url(#k2)" opacity="0.88"/>
+
+      <!-- Specular highlights -->
+      <path d="M320 520 C340 420 420 360 520 352"
+            fill="none" stroke="#FFFFFF" stroke-opacity="0.55"
+            stroke-width="22" stroke-linecap="round"/>
+
+      <circle cx="740" cy="360" r="48" fill="#39D5FF" opacity="0.14" filter="url(#kBlur)"/>
+    </g>
+  </g>
+
+  <!-- Separator (subtle) -->
+  <line x1="370" y1="130" x2="370" y2="290" stroke="#FFFFFF" stroke-opacity="0.28" stroke-width="3"/>
+
+  <!-- Text "Luma" -->
+  <text x="420" y="265"
+        fill="#FFFFFF"
+        font-size="176"
+        font-weight="600"
+        letter-spacing="0.02em"
+        filter="url(#tShadow)"
+        font-family="Poppins, Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial">
+    Luma
+  </text>
+
+  <!-- Optional: a tiny dot accent (remove if you want simpler) -->
+  <circle cx="810" cy="212" r="6" fill="#FFFFFF" opacity="0.55"/>
+</svg>

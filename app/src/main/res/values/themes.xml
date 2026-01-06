@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Luma Camera 深色主题 -->
+    <style name="Theme.LumaCamera" parent="android:Theme.Material.NoActionBar">
+        <!-- 状态栏和导航栏透明 -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowTranslucentStatus">true</item>
+        <item name="android:windowTranslucentNavigation">true</item>
+        
+        <!-- 全屏 -->
+        <item name="android:windowFullscreen">false</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        
+        <!-- 背景色 -->
+        <item name="android:windowBackground">@android:color/black</item>
+        
+        <!-- 硬件加速 -->
+        <item name="android:hardwareAccelerated">true</item>
+    </style>
+</resources>
