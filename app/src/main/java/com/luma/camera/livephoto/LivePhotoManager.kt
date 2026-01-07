@@ -1,4 +1,4 @@
-package com.luma.camera.livephoto
+﻿package com.luma.camera.livephoto
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -20,13 +20,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 实况照片管理器
- * 
- * 功能：
- * - 持续录制 3 秒环形缓冲区 (前后各 1.5 秒)
- * - 拍照时保存视频片段
- * - HEIC 容器封装 (类似 Apple Live Photo)
- * - 统一应用 LUT 滤镜
+ * 瀹炲喌鐓х墖绠＄悊鍣? * 
+ * 鍔熻兘锛? * - 鎸佺画褰曞埗 3 绉掔幆褰㈢紦鍐插尯 (鍓嶅悗鍚?1.5 绉?
+ * - 鎷嶇収鏃朵繚瀛樿棰戠墖娈? * - HEIC 瀹瑰櫒灏佽 (绫讳技 Apple Live Photo)
+ * - 缁熶竴搴旂敤 LUT 婊ら暅
  */
 @Singleton
 class LivePhotoManager @Inject constructor(
@@ -36,47 +33,45 @@ class LivePhotoManager @Inject constructor(
     companion object {
         private const val TAG = "LivePhotoManager"
         
-        // 缓冲区配置
-        const val BUFFER_DURATION_MS = 3000L // 3秒
-        const val BUFFER_BEFORE_CAPTURE_MS = 1500L // 拍照前 1.5 秒
-        const val BUFFER_AFTER_CAPTURE_MS = 1500L // 拍照后 1.5 秒
-        
-        // 视频编码参数
+        // 缂撳啿鍖洪厤缃?
+        const val BUFFER_DURATION_MS = 3000L // 3s
+        const val BUFFER_BEFORE_CAPTURE_MS = 1500L // 1.5s before capture
+        const val BUFFER_AFTER_CAPTURE_MS = 1500L // 1.5s after capture
+        // 瑙嗛缂栫爜鍙傛暟
         const val VIDEO_WIDTH = 1920
         const val VIDEO_HEIGHT = 1080
         const val VIDEO_BITRATE = 8_000_000 // 8 Mbps
         const val VIDEO_FRAME_RATE = 30
         const val VIDEO_I_FRAME_INTERVAL = 1
         
-        // 音频编码参数
+        // 闊抽缂栫爜鍙傛暟
         const val AUDIO_SAMPLE_RATE = 44100
         const val AUDIO_CHANNEL_COUNT = 2
         const val AUDIO_BITRATE = 128_000
     }
     
-    // 状态
-    private val _recordingState = MutableStateFlow<RecordingState>(RecordingState.Idle)
+    // 鐘舵€?    private
+val _recordingState = MutableStateFlow<RecordingState>(RecordingState.Idle)
     val recordingState: StateFlow<RecordingState> = _recordingState.asStateFlow()
     
-    // 环形缓冲区
-    private val frameBuffer = ConcurrentLinkedQueue<FrameData>()
+    // 鐜舰缂撳啿鍖?    private
+val frameBuffer = ConcurrentLinkedQueue<FrameData>()
     private val audioBuffer = ConcurrentLinkedQueue<AudioData>()
     
-    // 编码器
-    private var videoEncoder: MediaCodec? = null
+    // 缂栫爜鍣?    private
+var videoEncoder: MediaCodec? = null
     private var audioEncoder: MediaCodec? = null
     private var inputSurface: Surface? = null
     
-    // 录制作用域
-    private var recordingScope: CoroutineScope? = null
+    // 褰曞埗浣滅敤鍩?    private
+var recordingScope: CoroutineScope? = null
     private var recordingJob: Job? = null
     
-    // 捕获时间戳
-    private var captureTimestamp: Long = 0
+    // 鎹曡幏鏃堕棿鎴?    private
+var captureTimestamp: Long = 0
     
     /**
-     * 开始环形缓冲录制
-     */
+     * 寮€濮嬬幆褰㈢紦鍐插綍鍒?     */
     @RequiresApi(Build.VERSION_CODES.Q)
     fun startBuffering(): Surface? {
         if (_recordingState.value is RecordingState.Buffering) {
@@ -84,8 +79,8 @@ class LivePhotoManager @Inject constructor(
         }
         
         try {
-            // 创建视频编码器
-            val videoFormat = MediaFormat.createVideoFormat(
+            // 鍒涘缓瑙嗛缂栫爜鍣?
+val videoFormat = MediaFormat.createVideoFormat(
                 MediaFormat.MIMETYPE_VIDEO_HEVC,
                 VIDEO_WIDTH,
                 VIDEO_HEIGHT
@@ -103,8 +98,8 @@ class LivePhotoManager @Inject constructor(
                 start()
             }
             
-            // 创建音频编码器
-            val audioFormat = MediaFormat.createAudioFormat(
+            // 鍒涘缓闊抽缂栫爜鍣?
+val audioFormat = MediaFormat.createAudioFormat(
                 MediaFormat.MIMETYPE_AUDIO_AAC,
                 AUDIO_SAMPLE_RATE,
                 AUDIO_CHANNEL_COUNT
@@ -119,7 +114,7 @@ class LivePhotoManager @Inject constructor(
                 start()
             }
             
-            // 启动缓冲线程
+            // 鍚姩缂撳啿绾跨▼
             recordingScope = CoroutineScope(ioDispatcher + SupervisorJob())
             recordingJob = recordingScope?.launch {
                 bufferEncodedFrames()
@@ -135,8 +130,7 @@ class LivePhotoManager @Inject constructor(
     }
     
     /**
-     * 缓冲编码帧
-     */
+     * 缂撳啿缂栫爜甯?     */
     private suspend fun bufferEncodedFrames() = withContext(ioDispatcher) {
         val bufferInfo = MediaCodec.BufferInfo()
         
@@ -160,11 +154,11 @@ class LivePhotoManager @Inject constructor(
                             timestamp = System.currentTimeMillis()
                         )
                         
-                        // 添加到环形缓冲区
+                        // 娣诲姞鍒扮幆褰㈢紦鍐插尯
                         frameBuffer.add(frameData)
                         
-                        // 清理过期帧
-                        val cutoffTime = System.currentTimeMillis() - BUFFER_DURATION_MS
+                        // 娓呯悊杩囨湡甯?
+val cutoffTime = System.currentTimeMillis() - BUFFER_DURATION_MS
                         while (frameBuffer.peek()?.timestamp?.let { it < cutoffTime } == true) {
                             frameBuffer.poll()
                         }
@@ -174,17 +168,15 @@ class LivePhotoManager @Inject constructor(
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                // 继续循环
+                // 缁х画寰幆
             }
         }
     }
     
     /**
-     * 触发实况照片捕获
+     * 瑙﹀彂瀹炲喌鐓х墖鎹曡幏
      * 
-     * 保存当前缓冲区 + 继续录制 1.5 秒
-     * 使用 Google Motion Photo 格式（视频嵌入到 JPEG 末尾）
-     */
+     * 淇濆瓨褰撳墠缂撳啿鍖?+ 缁х画褰曞埗 1.5 绉?     * 浣跨敤 Google Motion Photo 鏍煎紡锛堣棰戝祵鍏ュ埌 JPEG 鏈熬锛?     */
     @RequiresApi(Build.VERSION_CODES.Q)
     suspend fun captureLivePhoto(
         photo: Bitmap,
@@ -194,13 +186,12 @@ class LivePhotoManager @Inject constructor(
             _recordingState.value = RecordingState.Capturing
             captureTimestamp = System.currentTimeMillis()
             
-            // 等待拍照后的 1.5 秒
-            delay(BUFFER_AFTER_CAPTURE_MS)
+            // 绛夊緟鎷嶇収鍚庣殑 1.5 绉?            delay(BUFFER_AFTER_CAPTURE_MS)
             
-            // 获取缓冲区的帧
-            val frames = frameBuffer.toList()
+            // 鑾峰彇缂撳啿鍖虹殑甯?
+val frames = frameBuffer.toList()
             
-            // 筛选时间窗口内的帧
+            // 绛涢€夋椂闂寸獥鍙ｅ唴鐨勫抚
             val startTimeMs = captureTimestamp - BUFFER_BEFORE_CAPTURE_MS
             val endTimeMs = captureTimestamp + BUFFER_AFTER_CAPTURE_MS
             
@@ -212,22 +203,22 @@ class LivePhotoManager @Inject constructor(
                 return@withContext Result.failure(Exception("No frames in buffer"))
             }
             
-            // 生成文件名（使用 .jpg 扩展名，因为 Motion Photo 基于 JPEG）
-            val timestamp = System.currentTimeMillis()
+            // 鐢熸垚鏂囦欢鍚嶏紙浣跨敤 .jpg 鎵╁睍鍚嶏紝鍥犱负 Motion Photo 鍩轰簬 JPEG锛?
+val timestamp = System.currentTimeMillis()
             val tempVideoFile = File(outputDir, "temp_${timestamp}.mp4")
             val tempPhotoFile = File(outputDir, "temp_${timestamp}.jpg")
-            val motionPhotoFile = File(outputDir, "MVIMG_${timestamp}.jpg")  // Motion Photo 格式
+            val motionPhotoFile = File(outputDir, "MVIMG_${timestamp}.jpg")  // Motion Photo 鏍煎紡
             
-            // 写入临时视频
+            // 鍐欏叆涓存椂瑙嗛
             writeVideoFile(tempVideoFile, selectedFrames)
             
-            // 保存临时照片
+            // 淇濆瓨涓存椂鐓х墖
             savePhoto(photo, tempPhotoFile)
             
-            // 创建 Motion Photo（将视频嵌入到 JPEG）
-            val motionPhotoCreated = createMotionPhoto(tempPhotoFile, tempVideoFile, motionPhotoFile)
+            // 鍒涘缓 Motion Photo锛堝皢瑙嗛宓屽叆鍒?JPEG锛?
+val motionPhotoCreated = createMotionPhoto(tempPhotoFile, tempVideoFile, motionPhotoFile)
             
-            // 清理临时文件
+            // 娓呯悊涓存椂鏂囦欢
             tempVideoFile.delete()
             tempPhotoFile.delete()
             
@@ -237,7 +228,7 @@ class LivePhotoManager @Inject constructor(
             
             val result = LivePhotoResult(
                 photoFile = motionPhotoFile,
-                videoFile = motionPhotoFile,  // Motion Photo 中视频嵌入到照片
+                videoFile = motionPhotoFile,  // Motion Photo 涓棰戝祵鍏ュ埌鐓х墖
                 durationMs = selectedFrames.last().timestamp - selectedFrames.first().timestamp
             )
             
@@ -251,14 +242,14 @@ class LivePhotoManager @Inject constructor(
     }
     
     /**
-     * 写入视频文件
+     * 鍐欏叆瑙嗛鏂囦欢
      */
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun writeVideoFile(file: File, frames: List<FrameData>) {
         val muxer = MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
         
         try {
-            // 添加视频轨道
+            // 娣诲姞瑙嗛杞ㄩ亾
             val videoFormat = MediaFormat.createVideoFormat(
                 MediaFormat.MIMETYPE_VIDEO_HEVC,
                 VIDEO_WIDTH,
@@ -290,65 +281,60 @@ class LivePhotoManager @Inject constructor(
     }
     
     /**
-     * 保存照片 - 使用 Google Motion Photo 格式
-     * 将视频嵌入到 JPEG 末尾，OPPO/三星/Google 相册都支持
-     */
+     * 淇濆瓨鐓х墖 - 浣跨敤 Google Motion Photo 鏍煎紡
+     * 灏嗚棰戝祵鍏ュ埌 JPEG 鏈熬锛孫PPO/涓夋槦/Google 鐩稿唽閮芥敮鎸?     */
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun savePhoto(bitmap: Bitmap, file: File) {
         file.outputStream().use { output ->
-            // 保存为 JPEG（Motion Photo 需要 JPEG 格式）
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 95, output)
+            // 淇濆瓨涓?JPEG锛圡otion Photo 闇€瑕?JPEG 鏍煎紡锛?            bitmap.compress(Bitmap.CompressFormat.JPEG, 95, output)
         }
     }
     
     /**
-     * 创建 Google Motion Photo 格式的照片
-     * 将照片和视频合并到单个文件中
+     * 鍒涘缓 Google Motion Photo 鏍煎紡鐨勭収鐗?     * 灏嗙収鐗囧拰瑙嗛鍚堝苟鍒板崟涓枃浠朵腑
      */
-    @RequiresApi(Build.VERSION_CODES.Q)
+        @RequiresApi(Build.VERSION_CODES.Q)
     private fun createMotionPhoto(photoFile: File, videoFile: File, outputFile: File): Boolean {
         try {
-            // 读取照片数据
             val photoBytes = photoFile.readBytes()
-            
-            // 读取视频数据
             val videoBytes = videoFile.readBytes()
-            
-            // 创建 Motion Photo XMP 元数据
-            val videoOffset = videoBytes.size
-            val xmpMetadata = createMotionPhotoXmp(videoOffset)
-            
-            // 写入输出文件：JPEG + XMP + Video
+
+            val videoLengthBytes = videoBytes.size
+            val xmpMetadata = createMotionPhotoXmp(videoLengthBytes)
+            val xmpPayload = ("http://ns.adobe.com/xap/1.0/\u0000" + xmpMetadata)
+                .toByteArray(Charsets.UTF_8)
+            val app1Length = xmpPayload.size + 2
+            val app1Header = byteArrayOf(
+                0xFF.toByte(),
+                0xE1.toByte(),
+                ((app1Length shr 8) and 0xFF).toByte(),
+                (app1Length and 0xFF).toByte()
+            )
+
             outputFile.outputStream().use { output ->
-                // 写入 JPEG 数据（不包含最后的 FFD9 结束标记）
                 val jpegEndIndex = findJpegEndMarker(photoBytes)
                 if (jpegEndIndex > 0) {
                     output.write(photoBytes, 0, jpegEndIndex)
                 } else {
                     output.write(photoBytes)
                 }
-                
-                // 写入 Motion Photo 标记（用于识别视频边界）
-                val marker = "MotionPhoto_Data".toByteArray()
-                output.write(marker)
-                
-                // 写入视频数据
+
+                if (jpegEndIndex > 0) {
+                    output.write(app1Header)
+                    output.write(xmpPayload)
+                    output.write(byteArrayOf(0xFF.toByte(), 0xD9.toByte()))
+                }
+
                 output.write(videoBytes)
-                
-                // 写入 JPEG 结束标记
-                output.write(byteArrayOf(0xFF.toByte(), 0xD9.toByte()))
             }
-            
+
             return true
         } catch (e: Exception) {
             timber.log.Timber.e(e, "Failed to create Motion Photo")
             return false
         }
-    }
-    
-    /**
-     * 查找 JPEG 结束标记 (FFD9) 的位置
-     */
+    }/**
+     * 鏌ユ壘 JPEG 缁撴潫鏍囪 (FFD9) 鐨勪綅缃?     */
     private fun findJpegEndMarker(data: ByteArray): Int {
         for (i in data.size - 2 downTo 0) {
             if (data[i] == 0xFF.toByte() && data[i + 1] == 0xD9.toByte()) {
@@ -359,9 +345,8 @@ class LivePhotoManager @Inject constructor(
     }
     
     /**
-     * 创建 Motion Photo XMP 元数据
-     */
-    private fun createMotionPhotoXmp(videoOffset: Int): String {
+     * 鍒涘缓 Motion Photo XMP 鍏冩暟鎹?     */
+    private fun createMotionPhotoXmp(videoLengthBytes: Int): String {
         return """
             <x:xmpmeta xmlns:x="adobe:ns:meta/">
                 <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
@@ -372,14 +357,14 @@ class LivePhotoManager @Inject constructor(
                         GCamera:MotionPhotoPresentationTimestampUs="0"
                         GCamera:MicroVideo="1"
                         GCamera:MicroVideoVersion="1"
-                        GCamera:MicroVideoOffset="$videoOffset"/>
+                        GCamera:MicroVideoOffset="\$videoLengthBytes"/>
                 </rdf:RDF>
             </x:xmpmeta>
         """.trimIndent()
     }
     
     /**
-     * 停止缓冲
+     * 鍋滄缂撳啿
      */
     fun stopBuffering() {
         recordingJob?.cancel()
@@ -405,7 +390,7 @@ class LivePhotoManager @Inject constructor(
     }
     
     /**
-     * 释放资源
+     * 閲婃斁璧勬簮
      */
     fun release() {
         stopBuffering()
@@ -413,8 +398,7 @@ class LivePhotoManager @Inject constructor(
 }
 
 /**
- * 录制状态
- */
+ * 褰曞埗鐘舵€? */
 sealed class RecordingState {
     object Idle : RecordingState()
     object Buffering : RecordingState()
@@ -423,8 +407,7 @@ sealed class RecordingState {
 }
 
 /**
- * 帧数据
- */
+ * 甯ф暟鎹? */
 data class FrameData(
     val data: ByteArray,
     val presentationTimeUs: Long,
@@ -442,7 +425,7 @@ data class FrameData(
 }
 
 /**
- * 音频数据
+ * 闊抽鏁版嵁
  */
 data class AudioData(
     val data: ByteArray,
@@ -460,10 +443,12 @@ data class AudioData(
 }
 
 /**
- * 实况照片结果
+ * 瀹炲喌鐓х墖缁撴灉
  */
 data class LivePhotoResult(
     val photoFile: File,
     val videoFile: File,
     val durationMs: Long
 )
+
+

@@ -1,4 +1,4 @@
-package com.luma.camera.presentation.screen.camera
+﻿package com.luma.camera.presentation.screen.camera
 
 import android.Manifest
 import android.content.Intent
@@ -41,14 +41,11 @@ import com.luma.camera.presentation.theme.LumaGold
 import com.luma.camera.presentation.viewmodel.CameraViewModel
 
 /**
- * 相机主界面
- * 
- * 完整的相机界面实现，包括：
- * - 120fps 取景器
- * - 焦段切换
- * - 模式切换
- * - Pro 模式参数控制
- * - LUT 滤镜选择
+ * 鐩告満涓荤晫闈? * 
+ * 瀹屾暣鐨勭浉鏈虹晫闈㈠疄鐜帮紝鍖呮嫭锛? * - 120fps 鍙栨櫙鍣? * - 鐒︽鍒囨崲
+ * - 妯″紡鍒囨崲
+ * - Pro 妯″紡鍙傛暟鎺у埗
+ * - LUT 婊ら暅閫夋嫨
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,11 +63,11 @@ fun CameraScreen(
     var showLutSelector by remember { mutableStateOf(false) }
     var showProControls by remember { mutableStateOf(false) }
     
-    // 触觉反馈
+    // 瑙﹁鍙嶉
     val context = LocalContext.current
     
-    // 权限状态
-    var hasCameraPermission by remember {
+    // 鏉冮檺鐘舵€?
+var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
                 context,
@@ -79,15 +76,15 @@ fun CameraScreen(
         )
     }
     
-    // 权限请求启动器
-    val permissionLauncher = rememberLauncherForActivityResult(
+    // 鏉冮檺璇锋眰鍚姩鍣?
+val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         hasCameraPermission = permissions[Manifest.permission.CAMERA] == true
     }
     
-    // LUT 文件选择器
-    val lutFilePicker = rememberLauncherForActivityResult(
+    // LUT 鏂囦欢閫夋嫨鍣?
+val lutFilePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         uri?.let {
@@ -95,8 +92,8 @@ fun CameraScreen(
         }
     }
     
-    // 首次启动时请求权限
-    LaunchedEffect(Unit) {
+    // 棣栨鍚姩鏃惰姹傛潈闄?
+LaunchedEffect(Unit) {
         if (!hasCameraPermission) {
             permissionLauncher.launch(
                 arrayOf(
@@ -107,18 +104,16 @@ fun CameraScreen(
         }
     }
     
-    // 生命周期处理 - 修复从相册返回后相机卡顿
+    // 鐢熷懡鍛ㄦ湡澶勭悊 - 淇浠庣浉鍐岃繑鍥炲悗鐩告満鍗￠】
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> {
-                    // 从后台或其他 Activity 返回时恢复相机
-                    viewModel.resumeCamera()
+                    // 浠庡悗鍙版垨鍏朵粬 Activity 杩斿洖鏃舵仮澶嶇浉鏈?                    viewModel.resumeCamera()
                 }
                 Lifecycle.Event.ON_PAUSE -> {
-                    // 进入后台或切换到其他 Activity 时暂停相机
-                    viewModel.pauseCamera()
+                    // 杩涘叆鍚庡彴鎴栧垏鎹㈠埌鍏朵粬 Activity 鏃舵殏鍋滅浉鏈?                    viewModel.pauseCamera()
                 }
                 else -> {}
             }
@@ -129,8 +124,8 @@ fun CameraScreen(
         }
     }
     
-    // 如果没有相机权限，显示权限请求界面
-    if (!hasCameraPermission) {
+    // 濡傛灉娌℃湁鐩告満鏉冮檺锛屾樉绀烘潈闄愯姹傜晫闈?
+if (!hasCameraPermission) {
         PermissionRequestScreen(
             onRequestPermission = {
                 permissionLauncher.launch(
@@ -144,17 +139,17 @@ fun CameraScreen(
         return
     }
     
-    // 检查是否需要使用 GL 渲染（有选中的 LUT 或启用峰值对焦）
-    // 始终使用 GL 渲染器以避免运行时切换导致的 Surface 问题
-    // LUT 和峰值对焦效果由 GL 渲染器内部控制开关
-    val useGLRendering = true
+    // 妫€鏌ユ槸鍚﹂渶瑕佷娇鐢?GL 娓叉煋锛堟湁閫変腑鐨?LUT 鎴栧惎鐢ㄥ嘲鍊煎鐒︼級
+    // 濮嬬粓浣跨敤 GL 娓叉煋鍣ㄤ互閬垮厤杩愯鏃跺垏鎹㈠鑷寸殑 Surface 闂
+    // LUT 鍜屽嘲鍊煎鐒︽晥鏋滅敱 GL 娓叉煋鍣ㄥ唴閮ㄦ帶鍒跺紑鍏?
+val useGLRendering = true
     
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // 取景器 - 始终使用 GL 渲染
+        // 鍙栨櫙鍣?- 濮嬬粓浣跨敤 GL 娓叉煋
         CameraViewfinder(
             aspectRatio = cameraState.aspectRatio,
             gridType = if (settings.showGrid) GridType.RULE_OF_THIRDS else GridType.NONE,
@@ -166,27 +161,26 @@ fun CameraScreen(
             },
             onGLRendererSurfaceReady = { surface ->
                 viewModel.onGLPreviewSurfaceReady(surface)
-            },
-            onTouchFocus = { x, y ->
-                // 点击取景器时收缩 Pro 控制面板和 LUT 选择器
+            },            onTouchFocus = { x, y, viewWidth, viewHeight ->
                 if (showProControls) {
                     showProControls = false
                 } else if (showLutSelector) {
                     showLutSelector = false
                 } else {
-                    // 正常的触摸对焦
-                    viewModel.onTouchFocus(x, y)
+                    viewModel.onTouchFocus(x, y, viewWidth, viewHeight)
                 }
+            },
+            onSurfaceDestroyed = {
+                viewModel.onPreviewSurfaceDestroyed()
             },
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.Center)
         )
         
-        // 峰值对焦由 GL 渲染器处理，不需要单独的叠加层
-        
-        // 直方图
-        if (settings.showHistogram) {
+        // 宄板€煎鐒︾敱 GL 娓叉煋鍣ㄥ鐞嗭紝涓嶉渶瑕佸崟鐙殑鍙犲姞灞?        
+        // 鐩存柟鍥?
+if (settings.showHistogram) {
             HistogramView(
                 redChannel = cameraState.histogramRed,
                 greenChannel = cameraState.histogramGreen,
@@ -199,32 +193,33 @@ fun CameraScreen(
             )
         }
         
-        // 顶部工具栏
-        CameraTopBar(
+        // 椤堕儴宸ュ叿鏍?
+CameraTopBar(
             flashMode = cameraState.flashMode,
             onFlashModeChange = { viewModel.setFlashMode(it) },
+            isLivePhotoEnabled = cameraState.isLivePhotoEnabled,
+            onLivePhotoToggle = { viewModel.toggleLivePhoto() },
             onSettingsClick = onNavigateToSettings,
             aspectRatio = cameraState.aspectRatio,
             onAspectRatioChange = { viewModel.setAspectRatio(it) },
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
-                .statusBarsPadding()
         )
         
-        // 曝光信息显示 (Pro 模式)
+        // 鏇濆厜淇℃伅鏄剧ず (Pro 妯″紡)
         if (isProMode) {
             ExposureInfoDisplay(
                 iso = cameraState.manualParameters.iso,
                 shutterSpeed = cameraState.manualParameters.shutterSpeed?.let { "1/${it}s" },
-                modifier = Modifier
+            modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = 80.dp)
             )
         }
         
-        // 底部控制区
-        Column(
+        // 搴曢儴鎺у埗鍖?
+Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
@@ -232,8 +227,8 @@ fun CameraScreen(
                 .padding(bottom = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // LUT 选择器
-            AnimatedVisibility(
+            // LUT 閫夋嫨鍣?
+AnimatedVisibility(
                 visible = showLutSelector,
                 enter = slideInVertically { it } + fadeIn(),
                 exit = slideOutVertically { it } + fadeOut()
@@ -245,7 +240,7 @@ fun CameraScreen(
                         viewModel.selectLut(lut)
                     },
                     onIntensityChange = { intensity ->
-                        // 滑块返回 0-1 的 Float，转换为 0-100 的 Int
+                        // 婊戝潡杩斿洖 0-1 鐨?Float锛岃浆鎹负 0-100 鐨?Int
                         viewModel.setLutIntensity((intensity * 100).toInt())
                     },
                     onImportLut = {
@@ -255,7 +250,7 @@ fun CameraScreen(
                         showLutSelector = false
                         onNavigateToLutManager()
                     },
-                    // 将 0-100 的 Int 转换为 0-1 的 Float
+                    // 灏?0-100 鐨?Int 杞崲涓?0-1 鐨?Float
                     intensity = cameraState.lutIntensity / 100f,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -265,7 +260,7 @@ fun CameraScreen(
             
             Spacer(modifier = Modifier.height(16.dp))
             
-            // Pro 模式控制面板
+            // Pro 妯″紡鎺у埗闈㈡澘
             AnimatedVisibility(
                 visible = isProMode && showProControls,
                 enter = slideInVertically { it } + fadeIn(),
@@ -276,7 +271,7 @@ fun CameraScreen(
                     onParametersChange = { params ->
                         viewModel.updateManualParameters { params }
                     },
-                    modifier = Modifier
+            modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
                 )
@@ -284,8 +279,8 @@ fun CameraScreen(
             
             Spacer(modifier = Modifier.height(8.dp))
             
-            // 焦段选择器
-            FocalLengthSelector(
+            // 鐒︽閫夋嫨鍣?
+FocalLengthSelector(
                 currentFocalLength = cameraState.currentFocalLength,
                 onFocalLengthSelected = { focalLength ->
                     viewModel.switchFocalLength(focalLength)
@@ -294,8 +289,8 @@ fun CameraScreen(
             
             Spacer(modifier = Modifier.height(16.dp))
             
-            // 模式选择器
-            ModeSelector(
+            // 妯″紡閫夋嫨鍣?
+ModeSelector(
                 modes = listOf("Auto", "Pro"),
                 selectedIndex = when (cameraState.currentMode) {
                     CameraMode.PHOTO -> 0
@@ -308,8 +303,8 @@ fun CameraScreen(
                         1 -> CameraMode.PRO
                         else -> CameraMode.PHOTO
                     }
-                    // 如果已经是 Pro 模式，再次点击切换控制面板显示
-                    if (mode == CameraMode.PRO && cameraState.currentMode == CameraMode.PRO) {
+                    // 濡傛灉宸茬粡鏄?Pro 妯″紡锛屽啀娆＄偣鍑诲垏鎹㈡帶鍒堕潰鏉挎樉绀?
+if (mode == CameraMode.PRO && cameraState.currentMode == CameraMode.PRO) {
                         showProControls = !showProControls
                     } else {
                         viewModel.switchMode(mode)
@@ -320,22 +315,22 @@ fun CameraScreen(
             
             Spacer(modifier = Modifier.height(24.dp))
             
-            // 底部操作栏
-            Row(
+            // 搴曢儴鎿嶄綔鏍?
+Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 相册入口
+                // 鐩稿唽鍏ュ彛
                 Box(
                     modifier = Modifier
                         .size(48.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(Color.Gray.copy(alpha = 0.3f))
                         .clickable {
-                            // 打开系统相册
+                            // 鎵撳紑绯荤粺鐩稿唽
                             val intent = Intent(Intent.ACTION_VIEW).apply {
                                 type = "image/*"
                                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -346,14 +341,14 @@ fun CameraScreen(
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Photo,
-                        contentDescription = "相册",
+                        contentDescription = "鐩稿唽",
                         tint = Color.White,
                         modifier = Modifier.size(24.dp)
                     )
                 }
                 
-                // 调色盘按钮
-                Box(
+                // 璋冭壊鐩樻寜閽?
+Box(
                     modifier = Modifier
                         .size(44.dp)
                         .clip(CircleShape)
@@ -366,13 +361,13 @@ fun CameraScreen(
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Palette,
-                        contentDescription = "调色盘",
+                        contentDescription = null,
                         tint = if (!cameraState.colorPalette.isDefault()) Color(0xFFD4A574) else Color.White,
                         modifier = Modifier.size(22.dp)
                     )
                 }
                 
-                // 快门按钮
+                // 蹇棬鎸夐挳
                 ShutterButton(
                     onClick = {
                         viewModel.capturePhoto()
@@ -380,7 +375,7 @@ fun CameraScreen(
                     isCapturing = cameraState.isCapturing
                 )
                 
-                // LUT 滤镜按钮
+                // LUT 婊ら暅鎸夐挳
                 Box(
                     modifier = Modifier
                         .size(44.dp)
@@ -394,36 +389,17 @@ fun CameraScreen(
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.FilterVintage,
-                        contentDescription = "滤镜",
+                        contentDescription = "婊ら暅",
                         tint = if (cameraState.selectedLut != null) LumaGold else Color.White,
                         modifier = Modifier.size(22.dp)
                     )
                 }
                 
-                // Live Photo 按钮
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(
-                            if (cameraState.isLivePhotoEnabled) LumaGold.copy(alpha = 0.3f)
-                            else Color.Gray.copy(alpha = 0.3f)
-                        )
-                        .clickable { viewModel.toggleLivePhoto() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (cameraState.isLivePhotoEnabled) Icons.Filled.MotionPhotosOn else Icons.Outlined.MotionPhotosOff,
-                        contentDescription = "实况",
-                        tint = if (cameraState.isLivePhotoEnabled) LumaGold else Color.White,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
             }
         }
         
-        // 调色盘面板
-        ColorPalettePanel(
+        // 璋冭壊鐩橀潰鏉?
+ColorPalettePanel(
             visible = cameraState.isColorPalettePanelOpen,
             palette = cameraState.colorPalette,
             presets = colorPresets,
@@ -451,12 +427,13 @@ fun CameraScreen(
 }
 
 /**
- * 顶部工具栏
- */
+ * 椤堕儴宸ュ叿鏍? */
 @Composable
 private fun CameraTopBar(
     flashMode: FlashMode,
     onFlashModeChange: (FlashMode) -> Unit,
+    isLivePhotoEnabled: Boolean,
+    onLivePhotoToggle: () -> Unit,
     onSettingsClick: () -> Unit,
     aspectRatio: AspectRatio,
     onAspectRatioChange: (AspectRatio) -> Unit,
@@ -467,11 +444,12 @@ private fun CameraTopBar(
     Row(
         modifier = modifier
             .background(Color.Black.copy(alpha = 0.3f))
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 闪光灯
+        // 闂厜鐏?
         Box {
             IconButton(onClick = {
                 val nextMode = when (flashMode) {
@@ -489,7 +467,7 @@ private fun CameraTopBar(
                         FlashMode.ON -> Icons.Filled.FlashOn
                         FlashMode.TORCH -> Icons.Filled.Highlight
                     },
-                    contentDescription = "闪光灯",
+                    contentDescription = null,
                     tint = when (flashMode) {
                         FlashMode.OFF -> Color.White
                         else -> LumaGold
@@ -498,7 +476,8 @@ private fun CameraTopBar(
             }
         }
         
-        // 比例选择
+        // 姣斾緥閫夋嫨
+
         Box {
             TextButton(onClick = { showAspectRatioMenu = true }) {
                 Text(
@@ -506,7 +485,7 @@ private fun CameraTopBar(
                         AspectRatio.RATIO_16_9 -> "16:9"
                         AspectRatio.RATIO_4_3 -> "4:3"
                         AspectRatio.RATIO_1_1 -> "1:1"
-                        AspectRatio.RATIO_FULL -> "全屏"
+                        AspectRatio.RATIO_FULL -> "鍏ㄥ睆"
                     },
                     color = Color.White,
                     fontSize = 14.sp
@@ -517,7 +496,7 @@ private fun CameraTopBar(
                 expanded = showAspectRatioMenu,
                 onDismissRequest = { showAspectRatioMenu = false }
             ) {
-                // 只显示 4 个比例选项，不包含别名
+                // 鍙樉绀?4 涓瘮渚嬮€夐」锛屼笉鍖呭惈鍒悕
                 listOf(
                     AspectRatio.RATIO_4_3,
                     AspectRatio.RATIO_16_9,
@@ -531,7 +510,7 @@ private fun CameraTopBar(
                                     AspectRatio.RATIO_16_9 -> "16:9"
                                     AspectRatio.RATIO_4_3 -> "4:3"
                                     AspectRatio.RATIO_1_1 -> "1:1"
-                                    AspectRatio.RATIO_FULL -> "全屏"
+                                    AspectRatio.RATIO_FULL -> "鍏ㄥ睆"
                                 }
                             )
                         },
@@ -544,11 +523,11 @@ private fun CameraTopBar(
             }
         }
         
-        // 设置
+        // 璁剧疆
         IconButton(onClick = onSettingsClick) {
             Icon(
                 imageVector = Icons.Outlined.Settings,
-                contentDescription = "设置",
+                contentDescription = "璁剧疆",
                 tint = Color.White
             )
         }
@@ -556,7 +535,7 @@ private fun CameraTopBar(
 }
 
 /**
- * LUT 选择面板
+ * LUT 閫夋嫨闈㈡澘
  */
 @Composable
 private fun LutSelectorPanel(
@@ -569,30 +548,30 @@ private fun LutSelectorPanel(
     intensity: Float,
     modifier: Modifier = Modifier
 ) {
-    // LUT 文件名到中文显示名称的映射
+    // LUT 鏂囦欢鍚嶅埌涓枃鏄剧ず鍚嶇О鐨勬槧灏?
     val lutDisplayNames = mapOf(
-        "eterna" to "电影质感",
-        "eterna_bb" to "电影漂白",
-        "classic_chrome" to "经典铬色",
-        "classic_neg" to "经典负片",
-        "astia" to "柔和人像",
-        "pro_neg_std" to "专业人像",
-        "provia" to "标准鲜艳",
-        "velvia" to "风光鲜艳",
-        "cold" to "冷色调",
-        "warm" to "暖色调",
-        "hasselblad_portrait" to "哈苏人像",
-        "forest_green" to "森系绿调",
-        "warm_skin" to "暖调肤色",
-        "beach_portrait" to "海边人像",
-        "sunset" to "夕阳暖调",
-        "snow_portrait" to "雪景清冷"
+        "eterna" to "Eterna",
+        "eterna_bb" to "Eterna BB",
+        "classic_chrome" to "Classic Chrome",
+        "classic_neg" to "Classic Neg",
+        "astia" to "Astia",
+        "pro_neg_std" to "Pro Neg Std",
+        "provia" to "Provia",
+        "velvia" to "Velvia",
+        "cold" to "Cool",
+        "warm" to "Warm",
+        "hasselblad_portrait" to "Hasselblad Portrait",
+        "forest_green" to "Forest Green",
+        "warm_skin" to "Warm Skin",
+        "beach_portrait" to "Beach Portrait",
+        "sunset" to "Sunset",
+        "snow_portrait" to "Snow Portrait"
     )
     
-    // 获取 LUT 的显示名称
-    fun getLutDisplayName(lut: LutFilter): String {
-        // 从 ID 或文件路径中提取文件名
-        val fileName = lut.filePath
+    // 鑾峰彇 LUT 鐨勬樉绀哄悕绉?
+fun getLutDisplayName(lut: LutFilter): String {
+        // 浠?ID 鎴栨枃浠惰矾寰勪腑鎻愬彇鏂囦欢鍚?
+val fileName = lut.filePath
             .substringAfterLast("/")
             .substringBeforeLast(".")
             .lowercase()
@@ -607,28 +586,28 @@ private fun LutSelectorPanel(
             )
             .padding(16.dp)
     ) {
-        // 标题
+        // 鏍囬
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "LUT 滤镜 (${lutFilters.size})",
+                text = "LUT 婊ら暅 (${lutFilters.size})",
                 color = Color.White,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Medium
             )
             
             Row {
-                // 管理按钮
+                // 绠＄悊鎸夐挳
                 IconButton(
                     onClick = onManageLuts,
                     modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Settings,
-                        contentDescription = "管理 LUT",
+                        contentDescription = "绠＄悊 LUT",
                         tint = Color.White,
                         modifier = Modifier.size(20.dp)
                     )
@@ -637,7 +616,7 @@ private fun LutSelectorPanel(
                 if (currentLut != null) {
                     TextButton(onClick = { onLutSelected(null) }) {
                         Text(
-                            text = "清除",
+                            text = "娓呴櫎",
                             color = LumaGold,
                             fontSize = 12.sp
                         )
@@ -648,21 +627,21 @@ private fun LutSelectorPanel(
         
         Spacer(modifier = Modifier.height(12.dp))
         
-        // LUT 列表 - 从 LutManager 获取真实列表
+        // LUT 鍒楄〃 - 浠?LutManager 鑾峰彇鐪熷疄鍒楄〃
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // 无滤镜
-            item {
+            // 鏃犳护闀?
+item {
                 LutPreviewThumbnail(
-                    lutName = "原图",
+                    lutName = "鍘熷浘",
                     previewBitmap = null,
                     isSelected = currentLut == null,
                     onClick = { onLutSelected(null) }
                 )
             }
             
-            // 显示所有 LUT 滤镜
+            // 鏄剧ず鎵€鏈?LUT 婊ら暅
             items(lutFilters) { lut ->
                 LutPreviewThumbnail(
                     lutName = getLutDisplayName(lut),
@@ -672,7 +651,7 @@ private fun LutSelectorPanel(
                 )
             }
             
-            // 导入/管理 LUT 按钮
+            // 瀵煎叆/绠＄悊 LUT 鎸夐挳
             item {
                 LutImportButton(
                     onClick = onImportLut
@@ -680,7 +659,7 @@ private fun LutSelectorPanel(
             }
         }
         
-        // 强度滑块
+        // 寮哄害婊戝潡
         if (currentLut != null) {
             Spacer(modifier = Modifier.height(16.dp))
             
@@ -693,7 +672,7 @@ private fun LutSelectorPanel(
 }
 
 /**
- * Pro 模式控制面板
+ * Pro 妯″紡鎺у埗闈㈡澘
  */
 @Composable
 private fun ProModeControlPanel(
@@ -709,7 +688,7 @@ private fun ProModeControlPanel(
             )
             .padding(16.dp)
     ) {
-        // ISO 控制
+        // ISO 鎺у埗
         ParameterRow(
             label = "ISO",
             value = manualParameters.iso?.toString() ?: "AUTO",
@@ -722,9 +701,9 @@ private fun ProModeControlPanel(
         
         Spacer(modifier = Modifier.height(12.dp))
         
-        // 快门速度
+        // 蹇棬閫熷害
         ParameterRow(
-            label = "快门",
+            label = "蹇棬",
             value = manualParameters.shutterSpeed?.let { "1/${it.toInt()}s" } ?: "AUTO",
             values = listOf("AUTO", "1/4000", "1/2000", "1/1000", "1/500", "1/250", "1/125", "1/60", "1/30"),
             onValueChange = { value ->
@@ -737,9 +716,9 @@ private fun ProModeControlPanel(
         
         Spacer(modifier = Modifier.height(12.dp))
         
-        // 白平衡
-        ParameterRow(
-            label = "白平衡",
+        // 鐧藉钩琛?
+ParameterRow(
+            label = "White balance",
             value = when(manualParameters.whiteBalanceMode) {
                 WhiteBalanceMode.MANUAL -> "${manualParameters.whiteBalanceKelvin}K"
                 else -> manualParameters.whiteBalanceMode.name
@@ -751,17 +730,17 @@ private fun ProModeControlPanel(
             }
         )
         
-        // 手动白平衡色温滑块（仅当 MANUAL 模式时显示）
+        // 鎵嬪姩鐧藉钩琛¤壊娓╂粦鍧楋紙浠呭綋 MANUAL 妯″紡鏃舵樉绀猴級
         if (manualParameters.whiteBalanceMode == WhiteBalanceMode.MANUAL) {
             Spacer(modifier = Modifier.height(8.dp))
             
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "色温",
+                    text = "鑹叉俯",
                     color = Color.White.copy(alpha = 0.7f),
                     fontSize = 12.sp
                 )
@@ -774,7 +753,7 @@ private fun ProModeControlPanel(
                         ))
                     },
                     valueRange = ManualParameters.WB_KELVIN_MIN.toFloat()..ManualParameters.WB_KELVIN_MAX.toFloat(),
-                    steps = 39, // 每200K一个档
+                    steps = 39, // 姣?00K涓€涓。
                     modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
                     colors = SliderDefaults.colors(
                         thumbColor = LumaGold,
@@ -793,10 +772,10 @@ private fun ProModeControlPanel(
         
         Spacer(modifier = Modifier.height(12.dp))
         
-        // 曝光补偿
+        // 鏇濆厜琛ュ伩
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
@@ -820,7 +799,7 @@ private fun ProModeControlPanel(
             )
             
             Text(
-                text = "%.1f".format(manualParameters.exposureCompensation ?: 0f),
+                text = "Camera permission required",
                 color = LumaGold,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium
@@ -830,8 +809,7 @@ private fun ProModeControlPanel(
 }
 
 /**
- * 参数行
- */
+ * 鍙傛暟琛? */
 @Composable
 private fun ParameterRow(
     label: String,
@@ -843,7 +821,7 @@ private fun ParameterRow(
     
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
@@ -881,7 +859,7 @@ private fun ParameterRow(
 }
 
 /**
- * 权限请求界面
+ * 鏉冮檺璇锋眰鐣岄潰
  */
 @Composable
 private fun PermissionRequestScreen(
@@ -906,14 +884,14 @@ private fun PermissionRequestScreen(
             )
             
             Text(
-                text = "需要相机权限",
+                text = "Camera permission required",
                 color = Color.White,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold
             )
             
             Text(
-                text = "Luma Camera 需要访问您的相机才能拍摄照片和视频",
+                text = "Luma Camera 闇€瑕佽闂偍鐨勭浉鏈烘墠鑳芥媿鎽勭収鐗囧拰瑙嗛",
                 color = Color.White.copy(alpha = 0.7f),
                 fontSize = 16.sp,
                 textAlign = TextAlign.Center
@@ -932,7 +910,7 @@ private fun PermissionRequestScreen(
                     .height(56.dp)
             ) {
                 Text(
-                    text = "授予权限",
+                    text = "鎺堜簣鏉冮檺",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -942,7 +920,7 @@ private fun PermissionRequestScreen(
 }
 
 /**
- * LUT 导入按钮
+ * LUT 瀵煎叆鎸夐挳
  */
 @Composable
 private fun LutImportButton(
@@ -962,13 +940,13 @@ private fun LutImportButton(
         ) {
             Icon(
                 imageVector = Icons.Outlined.Add,
-                contentDescription = "导入 LUT",
+                contentDescription = "瀵煎叆 LUT",
                 tint = Color.White,
                 modifier = Modifier.size(28.dp)
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "导入",
+                text = "瀵煎叆",
                 color = Color.White,
                 fontSize = 11.sp,
                 textAlign = TextAlign.Center
@@ -976,3 +954,10 @@ private fun LutImportButton(
         }
     }
 }
+
+
+
+
+
+
+

@@ -43,7 +43,8 @@ fun CameraViewfinder(
     glRenderer: GLPreviewRenderer? = null,
     onSurfaceReady: (Surface) -> Unit,
     onGLRendererSurfaceReady: ((Surface) -> Unit)? = null,
-    onTouchFocus: (Float, Float) -> Unit,
+    onTouchFocus: (Float, Float, Int, Int) -> Unit,
+    onSurfaceDestroyed: (() -> Unit)? = null,
     onPinchZoom: ((Float) -> Unit)? = null
 ) {
     var viewWidth by remember { mutableIntStateOf(0) }
@@ -63,7 +64,9 @@ fun CameraViewfinder(
                     detectTapGestures { offset ->
                         focusPoint = offset
                         showFocusIndicator = true
-                        onTouchFocus(offset.x, offset.y)
+                        if (viewWidth > 0 && viewHeight > 0) {
+                            onTouchFocus(offset.x, offset.y, viewWidth, viewHeight)
+                        }
                     }
                 }
         ) {
@@ -82,6 +85,7 @@ fun CameraViewfinder(
                             onGLRendererSurfaceReady!!(cameraSurface)
                         }
                     },
+                    onSurfaceDestroyed = onSurfaceDestroyed,
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
@@ -113,6 +117,7 @@ fun CameraViewfinder(
                                 }
                                 
                                 override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
+                                    onSurfaceDestroyed?.invoke()
                                     return true
                                 }
                                 
@@ -343,6 +348,7 @@ private fun AspectRatio.toFloat(): Float = when (this) {
 private fun GLPreviewTextureView(
     glRenderer: GLPreviewRenderer,
     onScreenSurfaceReady: (Surface, Int, Int) -> Unit,
+    onSurfaceDestroyed: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     // 保存 Surface 引用以便正确释放
