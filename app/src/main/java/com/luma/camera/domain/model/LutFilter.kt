@@ -11,6 +11,7 @@ data class LutFilter(
     val isBuiltIn: Boolean = true,
     val thumbnailPath: String? = null,
     val sortOrder: Int = 0,
+    val isPinned: Boolean = false,
     val size: LutSize = LutSize.SIZE_33
 )
 

@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.luma.camera.storage
 
 import android.content.ContentResolver
@@ -200,15 +202,13 @@ class MediaStoreHelper @Inject constructor(
         videoFile: java.io.File
     ) {
         try {
-            // Motion Photo 格式：photoFile 和 videoFile 是同一个文件
-            // 只需要保存一次（作为 JPEG 图片）
-            val isMotionPhoto = photoFile.absolutePath == videoFile.absolutePath
+            // Motion Photo ??????? MVIMG_ JPEG?????????
+            val isMotionPhoto = photoFile.name.endsWith("MP.jpg") || photoFile.name.endsWith("MP.jpeg") || photoFile.absolutePath == videoFile.absolutePath
             
             if (isMotionPhoto) {
-                // Motion Photo 格式 - 只保存单个文件到图片库
                 val photoResult = createImageFile(
                     displayName = photoFile.nameWithoutExtension,
-                    mimeType = MIME_TYPE_JPEG  // Motion Photo 使用 JPEG
+                    mimeType = MIME_TYPE_JPEG
                 )
                 
                 photoResult.onSuccess { (uri, outputStream) ->
@@ -220,11 +220,29 @@ class MediaStoreHelper @Inject constructor(
                     finishPendingFile(uri)
                     Timber.d("Motion Photo added to MediaStore: $uri")
                 }
-                
-                // 清理临时文件
+
+                if (videoFile.exists() && videoFile.absolutePath != photoFile.absolutePath) {
+                    val videoResult = createVideoFile(
+                        displayName = videoFile.nameWithoutExtension,
+                        mimeType = MIME_TYPE_MP4
+                    )
+                    videoResult.onSuccess { (uri, outputStream) ->
+                        outputStream.use { stream ->
+                            videoFile.inputStream().use { input ->
+                                input.copyTo(stream)
+                            }
+                        }
+                        finishPendingFile(uri)
+                        Timber.d("Motion Photo video added to MediaStore: $uri")
+                    }
+                }
+
                 photoFile.delete()
+                if (videoFile.absolutePath != photoFile.absolutePath) {
+                    videoFile.delete()
+                }
             } else {
-                // 旧格式 - 分别保存照片和视频
+                // ??? - ?????????
                 val photoResult = createImageFile(
                     displayName = photoFile.nameWithoutExtension,
                     mimeType = MIME_TYPE_HEIC
@@ -255,7 +273,6 @@ class MediaStoreHelper @Inject constructor(
                     Timber.d("Live photo video added to MediaStore: $uri")
                 }
                 
-                // 清理临时文件
                 photoFile.delete()
                 videoFile.delete()
             }

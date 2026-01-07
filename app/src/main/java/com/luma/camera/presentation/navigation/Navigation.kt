@@ -8,6 +8,7 @@ import androidx.navigation.compose.rememberNavController
 import com.luma.camera.presentation.screen.camera.CameraScreen
 import com.luma.camera.presentation.screen.lutmanager.LutManagerScreen
 import com.luma.camera.presentation.screen.settings.SettingsScreen
+import com.luma.camera.presentation.screen.settings.VersionScreen
 
 /**
  * Luma Camera 导航路由
@@ -16,6 +17,7 @@ sealed class Screen(val route: String) {
     data object Camera : Screen("camera")
     data object Settings : Screen("settings")
     data object LutManager : Screen("lut_manager")
+    data object Version : Screen("version")
 }
 
 /**
@@ -44,12 +46,23 @@ fun LumaCameraNavHost(
             SettingsScreen(
                 onNavigateBack = {
                     navController.popBackStack()
+                },
+                onNavigateToVersion = {
+                    navController.navigate(Screen.Version.route)
                 }
             )
         }
         
         composable(Screen.LutManager.route) {
             LutManagerScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(Screen.Version.route) {
+            VersionScreen(
                 onNavigateBack = {
                     navController.popBackStack()
                 }

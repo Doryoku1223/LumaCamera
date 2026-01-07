@@ -22,16 +22,16 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * OpenGL ES 3.0 预览渲染器
+ * OpenGL ES 3.0 预览渲染�?
  *
- * 核心功能：
- * - 接收相机 SurfaceTexture 帧
+ * 核心功能�?
+ * - 接收相机 SurfaceTexture �?
  * - 实时应用 LUT 滤镜
- * - 可选叠加峰值对焦
+ * - 可选叠加峰值对�?
  * - 120fps 渲染输出
  *
- * 渲染管线：
- * Camera OES Texture → LUT Shader → (Optional) Focus Peaking → Output Surface
+ * 渲染管线�?
+ * Camera OES Texture �?LUT Shader �?(Optional) Focus Peaking �?Output Surface
  */
 @Singleton
 class GLPreviewRenderer @Inject constructor(
@@ -48,7 +48,7 @@ class GLPreviewRenderer @Inject constructor(
     private var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
     private var eglConfig: EGLConfig? = null
 
-    // ==================== 纹理和缓冲 ====================
+    // ==================== 纹理和缓�?====================
     private var cameraTextureId: Int = 0
     private var cameraSurfaceTexture: SurfaceTexture? = null
     private var cachedCameraSurface: Surface? = null  // 缓存 Surface 避免泄漏
@@ -56,8 +56,10 @@ class GLPreviewRenderer @Inject constructor(
     
     // 纹理变换矩阵
     private val textureMatrix = FloatArray(16)
+    private val adjustedTextureMatrix = FloatArray(16)
+    private val cropMatrix = FloatArray(16)
     
-    // 中间 FBO（用于多 Pass 渲染）
+    // 中间 FBO（用于多 Pass 渲染�?
     private var intermediateFbo: Int = 0
     private var intermediateTexture: Int = 0
 
@@ -65,12 +67,14 @@ class GLPreviewRenderer @Inject constructor(
     private var renderThread: HandlerThread? = null
     private var renderHandler: Handler? = null
     
-    // ==================== 状态 ====================
+    // ==================== 状�?====================
     private val isInitialized = AtomicBoolean(false)
     private val isRendering = AtomicBoolean(false)
     
     private var surfaceWidth: Int = 0
     private var surfaceHeight: Int = 0
+    private var cameraBufferWidth: Int = 0
+    private var cameraBufferHeight: Int = 0
     
     // ==================== 渲染配置 ====================
     private var currentLutTextureId: Int = 0
@@ -79,16 +83,16 @@ class GLPreviewRenderer @Inject constructor(
     private var isLutEnabled: Boolean = false
     private var isFocusPeakingEnabled: Boolean = false
     
-    // LUT 纹理缓存（在 GL 线程创建）
+    // LUT 纹理缓存（在 GL 线程创建�?
     private val lutTextureCache = mutableMapOf<String, Int>()
     
-    // ==================== 调色盘配置 ====================
+    // ==================== 调色盘配�?====================
     private var isColorPaletteEnabled: Boolean = false
     private var colorPaletteTemperatureRgb = floatArrayOf(1f, 1f, 1f)
     private var colorPaletteSaturation: Float = 1f
     private var colorPaletteTone: Float = 0f
     
-    // 第二个中间 FBO（用于 ColorPalette + LUT 双 Pass）
+    // 第二个中�?FBO（用�?ColorPalette + LUT �?Pass�?
     private var intermediateFbo2: Int = 0
     private var intermediateTexture2: Int = 0
 
@@ -99,10 +103,10 @@ class GLPreviewRenderer @Inject constructor(
     private val _fps = MutableStateFlow(0f)
     val fps: StateFlow<Float> = _fps.asStateFlow()
     
-    // 帧数据回调（用于直方图分析等）
+    // 帧数据回调（用于直方图分析等�?
     private var frameDataCallback: ((ByteArray, Int, Int) -> Unit)? = null
     private var frameDataSampleCounter = 0
-    private val frameDataSampleInterval = 15  // 每15帧采样一次
+    private val frameDataSampleInterval = 15  // �?5帧采样一�?
 
     // 帧率计算
     private var frameCount = 0
@@ -111,7 +115,7 @@ class GLPreviewRenderer @Inject constructor(
     /**
      * 设置帧数据回调（用于直方图分析）
      * 
-     * 注意：回调频率较低（约 8fps）以避免性能问题
+     * 注意：回调频率较低（�?8fps）以避免性能问题
      */
     fun setFrameDataCallback(callback: ((ByteArray, Int, Int) -> Unit)?) {
         frameDataCallback = callback
@@ -120,10 +124,10 @@ class GLPreviewRenderer @Inject constructor(
     /**
      * 初始化渲染器
      * 
-     * @param outputSurface 输出 Surface（来自 TextureView 或 SurfaceView）
+     * @param outputSurface 输出 Surface（来�?TextureView �?SurfaceView�?
      * @param width 渲染宽度
      * @param height 渲染高度
-     * @param onInitialized 初始化完成回调，返回相机应输出到的 Surface
+     * @param onInitialized 初始化完成回调，返回相机应输出到�?Surface
      */
     fun initialize(
         outputSurface: Surface, 
@@ -131,7 +135,7 @@ class GLPreviewRenderer @Inject constructor(
         height: Int,
         onInitialized: ((Surface) -> Unit)? = null
     ) {
-        // 如果已经初始化，先释放资源再重新初始化
+        // 如果已经初始化，先释放资源再重新初始�?
         if (isInitialized.get()) {
             Timber.d("Renderer already initialized, reinitializing...")
             releaseSync()
@@ -152,7 +156,7 @@ class GLPreviewRenderer @Inject constructor(
                 _rendererState.value = RendererState.Ready
                 Timber.d("GLPreviewRenderer initialized: ${width}x${height}")
                 
-                // 在 GL 线程初始化完成后，回调通知相机 Surface 已就绪
+                // �?GL 线程初始化完成后，回调通知相机 Surface 已就�?
                 onInitialized?.let { callback ->
                     getCameraSurface()?.let { surface ->
                         // 切换到主线程执行回调
@@ -170,7 +174,7 @@ class GLPreviewRenderer @Inject constructor(
 
     /**
      * 获取相机 SurfaceTexture
-     * 相机应该将预览帧输出到这个 SurfaceTexture
+     * 相机应该将预览帧输出到这�?SurfaceTexture
      */
     fun getCameraSurfaceTexture(): SurfaceTexture? {
         return cameraSurfaceTexture
@@ -179,29 +183,29 @@ class GLPreviewRenderer @Inject constructor(
     /**
      * 获取相机 Surface（使用缓存避免泄漏）
      * 
-     * 重要：返回的 Surface 由 GLPreviewRenderer 管理其生命周期，
-     * 调用者不需要也不应该调用 release()
+     * 重要：返回的 Surface �?GLPreviewRenderer 管理其生命周期，
+     * 调用者不需要也不应该调�?release()
      */
     fun getCameraSurface(): Surface? {
         val surfaceTexture = cameraSurfaceTexture ?: return null
         
-        // 如果缓存的 Surface 有效，直接返回
+        // 如果缓存�?Surface 有效，直接返�?
         cachedCameraSurface?.let { surface ->
             if (surface.isValid) {
                 return surface
             }
-            // Surface 已失效，释放并重新创建
+            // Surface 已失效，释放并重新创�?
             surface.release()
         }
         
-        // 创建新的 Surface 并缓存
+        // 创建新的 Surface 并缓�?
         val newSurface = Surface(surfaceTexture)
         cachedCameraSurface = newSurface
         return newSurface
     }
 
     /**
-     * 释放缓存的 Camera Surface
+     * 释放缓存�?Camera Surface
      */
     private fun releaseCachedCameraSurface() {
         cachedCameraSurface?.let { surface ->
@@ -213,8 +217,8 @@ class GLPreviewRenderer @Inject constructor(
     }
 
     /**
-     * 设置 LUT 纹理（使用纹理 ID）
-     * @deprecated 使用 setLutData 在 GL 线程上创建纹理
+     * 设置 LUT 纹理（使用纹�?ID�?
+     * @deprecated 使用 setLutData �?GL 线程上创建纹�?
      */
     fun setLutTexture(textureId: Int, size: Int) {
         renderHandler?.post {
@@ -228,11 +232,11 @@ class GLPreviewRenderer @Inject constructor(
     /**
      * 设置 LUT 数据（在 GL 线程上创建纹理）
      * 
-     * 这是推荐的方式，确保纹理在正确的 GL 线程上创建
+     * 这是推荐的方式，确保纹理在正确的 GL 线程上创�?
      * 
      * @param lutId LUT 唯一标识
-     * @param size LUT 尺寸（通常 17, 33, 或 65）
-     * @param data LUT RGB 数据（FloatArray，大小 = size³ * 3）
+     * @param size LUT 尺寸（通常 17, 33, �?65�?
+     * @param data LUT RGB 数据（FloatArray，大�?= size³ * 3�?
      */
     fun setLutData(lutId: String?, size: Int, data: FloatArray?) {
         renderHandler?.post {
@@ -245,7 +249,7 @@ class GLPreviewRenderer @Inject constructor(
                 return@post
             }
             
-            // 检查缓存
+            // 检查缓�?
             val cachedTextureId = lutTextureCache[lutId]
             if (cachedTextureId != null) {
                 currentLutTextureId = cachedTextureId
@@ -255,7 +259,7 @@ class GLPreviewRenderer @Inject constructor(
                 return@post
             }
             
-            // 在 GL 线程上创建纹理
+            // �?GL 线程上创建纹�?
             val textureId = textureManager.createLutTexture(lutId, size, data)
             lutTextureCache[lutId] = textureId
             
@@ -287,16 +291,16 @@ class GLPreviewRenderer @Inject constructor(
     }
 
     /**
-     * 设置峰值对焦
+     * 设置峰值对�?
      */
     fun setFocusPeakingEnabled(enabled: Boolean) {
         isFocusPeakingEnabled = enabled
     }
     
-    // ==================== 调色盘控制 ====================
+    // ==================== 调色盘控�?====================
     
     /**
-     * 设置调色盘启用状态
+     * 设置调色盘启用状�?
      */
     fun setColorPaletteEnabled(enabled: Boolean) {
         isColorPaletteEnabled = enabled
@@ -314,14 +318,14 @@ class GLPreviewRenderer @Inject constructor(
     
     /**
      * 设置调色盘饱和度
-     * @param saturation 饱和度系数 (0.65 ~ 1.35)
+     * @param saturation 饱和度系�?(0.65 ~ 1.35)
      */
     fun setColorPaletteSaturation(saturation: Float) {
         colorPaletteSaturation = saturation.coerceIn(0.65f, 1.35f)
     }
     
     /**
-     * 设置调色盘光影/对比度
+     * 设置调色盘光�?对比�?
      * @param tone 光影系数 (-1 ~ 1)
      */
     fun setColorPaletteTone(tone: Float) {
@@ -346,7 +350,7 @@ class GLPreviewRenderer @Inject constructor(
     }
     
     /**
-     * 获取调色盘是否启用
+     * 获取调色盘是否启�?
      */
     fun isColorPaletteEnabled(): Boolean = isColorPaletteEnabled
     
@@ -356,7 +360,7 @@ class GLPreviewRenderer @Inject constructor(
     fun getColorPaletteTemperatureRgb(): FloatArray = colorPaletteTemperatureRgb.copyOf()
     
     /**
-     * 获取当前饱和度系数
+     * 获取当前饱和度系�?
      */
     fun getColorPaletteSaturation(): Float = colorPaletteSaturation
     
@@ -366,19 +370,19 @@ class GLPreviewRenderer @Inject constructor(
     fun getColorPaletteTone(): Float = colorPaletteTone
     
     /**
-     * 更新调色盘参数（从 ViewModel 调用）
+     * 更新调色盘参数（�?ViewModel 调用�?
      * 
-     * @param temperatureKelvin 色温（开尔文 2500-9000）
-     * @param saturation 饱和度（-0.35 ~ +0.35）
-     * @param tone 光影（-1 ~ +1）
+     * @param temperatureKelvin 色温（开尔文 2500-9000�?
+     * @param saturation 饱和度（-0.35 ~ +0.35�?
+     * @param tone 光影�?1 ~ +1�?
      */
     fun updateColorPalette(temperatureKelvin: Float, saturation: Float, tone: Float) {
         renderHandler?.post {
-            // 转换色温到 RGB 乘数
+            // 转换色温�?RGB 乘数
             val rgbMultipliers = kelvinToRgbMultipliers(temperatureKelvin)
             colorPaletteTemperatureRgb = rgbMultipliers
             
-            // 饱和度：-0.35~+0.35 转换为 0.65~1.35
+            // 饱和度：-0.35~+0.35 转换�?0.65~1.35
             colorPaletteSaturation = 1f + saturation
             
             // 光影直接使用
@@ -425,8 +429,8 @@ class GLPreviewRenderer @Inject constructor(
             (0.5432067891f * Math.log((temp - 10f).toDouble()).toFloat() - 1.1962540892f).coerceIn(0f, 1f)
         }
         
-        // 归一化（以 5500K 为基准）
-        val baseRgb = floatArrayOf(1f, 0.94f, 0.91f) // 5500K 近似值
+        // 归一化（�?5500K 为基准）
+        val baseRgb = floatArrayOf(1f, 0.94f, 0.91f) // 5500K 近似�?
         return floatArrayOf(
             baseRgb[0] / rgb[0].coerceAtLeast(0.001f),
             baseRgb[1] / rgb[1].coerceAtLeast(0.001f),
@@ -435,7 +439,7 @@ class GLPreviewRenderer @Inject constructor(
     }
 
     /**
-     * 设置峰值对焦颜色
+     * 设置峰值对焦颜�?
      */
     fun setFocusPeakingColor(color: FocusPeakingShader.PeakingColor) {
         renderHandler?.post {
@@ -444,7 +448,7 @@ class GLPreviewRenderer @Inject constructor(
     }
 
     /**
-     * 设置峰值对焦阈值
+     * 设置峰值对焦阈�?
      */
     fun setFocusPeakingThreshold(threshold: Float) {
         renderHandler?.post {
@@ -453,8 +457,8 @@ class GLPreviewRenderer @Inject constructor(
     }
 
     /**
-     * 请求渲染一帧
-     * 由 SurfaceTexture.OnFrameAvailableListener 调用
+     * 请求渲染一�?
+     * �?SurfaceTexture.OnFrameAvailableListener 调用
      */
     fun requestRender() {
         if (!isInitialized.get() || !isRendering.get()) return
@@ -465,7 +469,7 @@ class GLPreviewRenderer @Inject constructor(
     }
 
     /**
-     * 开始渲染
+     * 开始渲�?
      */
     fun startRendering() {
         if (!isInitialized.get()) {
@@ -476,7 +480,7 @@ class GLPreviewRenderer @Inject constructor(
         isRendering.set(true)
         _rendererState.value = RendererState.Rendering
         
-        // 设置帧可用回调
+        // 设置帧可用回�?
         cameraSurfaceTexture?.setOnFrameAvailableListener({ 
             requestRender() 
         }, renderHandler)
@@ -496,22 +500,22 @@ class GLPreviewRenderer @Inject constructor(
     
     /**
      * 暂停渲染器（保留 EGL 上下文，只停止渲染）
-     * 在 Activity onPause 时调用
+     * �?Activity onPause 时调�?
      */
     fun onPause() {
         Timber.d("GLPreviewRenderer onPause")
         stopRendering()
         // 保持 EGL 上下文和资源，只停止渲染循环
-        // 这样在 onResume 时可以快速恢复
+        // 这样�?onResume 时可以快速恢�?
     }
     
-    // 需要重新初始化的回调
+    // 需要重新初始化的回�?
     private var reinitializeCallback: ((Surface) -> Unit)? = null
     private var pendingOutputSurface: Surface? = null
     
     /**
-     * 设置重新初始化回调
-     * 当渲染器需要重新初始化时会调用此回调
+     * 设置重新初始化回�?
+     * 当渲染器需要重新初始化时会调用此回�?
      */
     fun setReinitializeCallback(callback: (Surface) -> Unit) {
         reinitializeCallback = callback
@@ -525,26 +529,25 @@ class GLPreviewRenderer @Inject constructor(
     }
     
     /**
-     * 恢复渲染器
-     * 在 Activity onResume 时调用
+     * 恢复渲染�?
+     * �?Activity onResume 时调�?
      * 
-     * @param outputSurface 可选的输出 Surface，用于在需要时重新初始化
+     * @param outputSurface 可选的输出 Surface，用于在需要时重新初始�?
      */
     fun onResume(outputSurface: Surface? = null) {
         Timber.d("GLPreviewRenderer onResume, isInitialized=${isInitialized.get()}")
         
-        // 保存输出 Surface 以便重新初始化
+        // 保存输出 Surface 以便重新初始�?
         if (outputSurface != null) {
-            pendingOutputSurface = outputSurface
-        }
+}
         
         if (isInitialized.get()) {
-            // 如果已经初始化，确保 EGL 上下文是当前的
+            // 如果已经初始化，确保 EGL 上下文是当前�?
             renderHandler?.post {
                 if (eglDisplay != EGL14.EGL_NO_DISPLAY && 
                     eglSurface != EGL14.EGL_NO_SURFACE && 
                     eglContext != EGL14.EGL_NO_CONTEXT) {
-                    // 检查 EGL Surface 是否仍然有效
+                    // 检�?EGL Surface 是否仍然有效
                     val width = IntArray(1)
                     val height = IntArray(1)
                     val surfaceValid = EGL14.eglQuerySurface(eglDisplay, eglSurface, EGL14.EGL_WIDTH, width, 0) &&
@@ -552,7 +555,7 @@ class GLPreviewRenderer @Inject constructor(
                                        width[0] > 0 && height[0] > 0
                     
                     if (surfaceValid) {
-                        // 重新绑定 EGL 上下文
+                        // 重新绑定 EGL 上下�?
                         if (!EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)) {
                             Timber.e("Failed to make EGL context current on resume, error: ${EGL14.eglGetError()}")
                             // EGL 上下文绑定失败，需要重新初始化
@@ -560,7 +563,7 @@ class GLPreviewRenderer @Inject constructor(
                         } else {
                             Timber.d("EGL context rebound successfully")
                             _rendererState.value = RendererState.Ready
-                            // 立即开始渲染
+                            // 立即开始渲�?
                             startRendering()
                         }
                     } else {
@@ -585,8 +588,8 @@ class GLPreviewRenderer @Inject constructor(
     }
     
     /**
-     * 触发重新初始化流程
-     * 当检测到 EGL Surface 失效时，可以调用此方法重新初始化渲染器
+     * 触发重新初始化流�?
+     * 当检测到 EGL Surface 失效时，可以调用此方法重新初始化渲染�?
      */
     fun triggerReinitialization() {
         Timber.d("Triggering reinitialization")
@@ -597,7 +600,7 @@ class GLPreviewRenderer @Inject constructor(
         isInitialized.set(false)
         _rendererState.value = RendererState.Idle
         
-        // 如果有待处理的 Surface，重新初始化
+        // 如果有待处理�?Surface，重新初始化
         val surface = pendingOutputSurface
         if (surface != null && surface.isValid) {
             Timber.d("Reinitializing with pending surface: ${surfaceWidth}x${surfaceHeight}")
@@ -613,9 +616,16 @@ class GLPreviewRenderer @Inject constructor(
     }
     
     /**
-     * 检查渲染器是否已初始化且就绪
+     * 检查渲染器是否已初始化且就�?
      */
     fun isReady(): Boolean = isInitialized.get() && cameraSurfaceTexture != null
+    fun getOutputSurfaceRatio(): Float? {
+        return if (surfaceWidth > 0 && surfaceHeight > 0) {
+            surfaceHeight.toFloat() / surfaceWidth.toFloat()
+        } else {
+            null
+        }
+    }
 
     /**
      * 更新输出 Surface 尺寸
@@ -625,11 +635,29 @@ class GLPreviewRenderer @Inject constructor(
         
         surfaceWidth = width
         surfaceHeight = height
-        
         renderHandler?.post {
             GLES30.glViewport(0, 0, width, height)
             updateIntermediateFbo()
+            updateIntermediateFbo2()
             Timber.d("Surface size updated: ${width}x${height}")
+        }
+    }
+
+    /**
+     * 更新相机输出缓冲尺寸（必须与相机预览尺寸一致）
+     */
+    fun setCameraBufferSize(width: Int, height: Int) {
+        cameraBufferWidth = width
+        cameraBufferHeight = height
+        val handler = renderHandler
+        if (handler != null) {
+            handler.post {
+                cameraSurfaceTexture?.setDefaultBufferSize(width, height)
+                Timber.d("Camera buffer size set: ${width}x${height}")
+            }
+        } else {
+            cameraSurfaceTexture?.setDefaultBufferSize(width, height)
+            Timber.d("Camera buffer size set (no handler): ${width}x${height}")
         }
     }
 
@@ -656,8 +684,8 @@ class GLPreviewRenderer @Inject constructor(
     /**
      * 为重新初始化释放资源（同步）
      * 
-     * 当 Surface 被销毁后恢复时调用，需要完全释放 EGL 资源
-     * 以便使用新的 Surface 重新初始化
+     * �?Surface 被销毁后恢复时调用，需要完全释�?EGL 资源
+     * 以便使用新的 Surface 重新初始�?
      */
     fun releaseForReinit() {
         Timber.d("Releasing for reinitialization...")
@@ -691,7 +719,7 @@ class GLPreviewRenderer @Inject constructor(
             }
         }
         
-        // 等待释放完成，最多等待 500ms
+        // 等待释放完成，最多等�?500ms
         try {
             latch.await(500, java.util.concurrent.TimeUnit.MILLISECONDS)
         } catch (e: InterruptedException) {
@@ -707,7 +735,7 @@ class GLPreviewRenderer @Inject constructor(
         renderThread = null
         renderHandler = null
         
-        // 清除 LUT 纹理缓存（因为 GL context 已销毁）
+        // 清除 LUT 纹理缓存（因�?GL context 已销毁）
         lutTextureCache.clear()
         currentLutTextureId = 0
         isLutEnabled = false
@@ -724,7 +752,7 @@ class GLPreviewRenderer @Inject constructor(
             throw RuntimeException("Failed to get EGL display")
         }
 
-        // 初始化 EGL
+        // 初始�?EGL
         val version = IntArray(2)
         if (!EGL14.eglInitialize(eglDisplay, version, 0, version, 1)) {
             throw RuntimeException("Failed to initialize EGL")
@@ -788,7 +816,7 @@ class GLPreviewRenderer @Inject constructor(
         GLES30.glDisable(GLES30.GL_DEPTH_TEST)
         GLES30.glDisable(GLES30.GL_CULL_FACE)
 
-        // 初始化 Shader
+        // 初始�?Shader
         lutShader.initialize()
         passthroughShader.initialize()
         focusPeakingShader.initialize()
@@ -801,16 +829,20 @@ class GLPreviewRenderer @Inject constructor(
             setDefaultBufferSize(surfaceWidth, surfaceHeight)
         }
 
-        // 创建顶点缓冲 - 使用标准纹理坐标，让 SurfaceTexture 的变换矩阵处理方向
-        // 不要预先翻转纹理坐标，因为 textureMatrix 会处理正确的变换
+        // 创建顶点缓冲 - 使用标准纹理坐标，让 SurfaceTexture 的变换矩阵处理方�?
+        // 不要预先翻转纹理坐标，因�?textureMatrix 会处理正确的变换
         vertexBuffer = textureManager.createFullscreenQuadBuffer()
 
-        // 创建中间 FBO（用于多 Pass）
+        // 创建中间 FBO（用于多 Pass�?
         createIntermediateFbo()
         createIntermediateFbo2()
 
         // 初始化纹理矩阵为单位矩阵
         Matrix.setIdentityM(textureMatrix, 0)
+        Matrix.setIdentityM(adjustedTextureMatrix, 0)
+        Matrix.setIdentityM(cropMatrix, 0)
+        cameraBufferWidth = surfaceWidth
+        cameraBufferHeight = surfaceHeight
 
         Timber.d("GL initialized successfully")
     }
@@ -824,7 +856,7 @@ class GLPreviewRenderer @Inject constructor(
         // 创建纹理
         intermediateTexture = textureManager.create2DTexture(surfaceWidth, surfaceHeight)
 
-        // 绑定纹理到 FBO
+        // 绑定纹理�?FBO
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, intermediateFbo)
         GLES30.glFramebufferTexture2D(
             GLES30.GL_FRAMEBUFFER,
@@ -834,7 +866,7 @@ class GLPreviewRenderer @Inject constructor(
             0
         )
 
-        // 检查 FBO 完整性
+        // 检�?FBO 完整�?
         val status = GLES30.glCheckFramebufferStatus(GLES30.GL_FRAMEBUFFER)
         if (status != GLES30.GL_FRAMEBUFFER_COMPLETE) {
             Timber.e("Framebuffer incomplete: $status")
@@ -866,7 +898,7 @@ class GLPreviewRenderer @Inject constructor(
         // 创建纹理
         intermediateTexture2 = textureManager.create2DTexture(surfaceWidth, surfaceHeight)
 
-        // 绑定纹理到 FBO
+        // 绑定纹理�?FBO
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, intermediateFbo2)
         GLES30.glFramebufferTexture2D(
             GLES30.GL_FRAMEBUFFER,
@@ -902,26 +934,27 @@ class GLPreviewRenderer @Inject constructor(
             // 更新相机纹理
             cameraSurfaceTexture?.updateTexImage()
             cameraSurfaceTexture?.getTransformMatrix(textureMatrix)
+            updateAdjustedTextureMatrix()
 
             // 清屏
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
             
-            // 确定需要哪种渲染流程
+            // 确定需要哪种渲染流�?
             val needsColorPalette = isColorPaletteEnabled
             val needsLut = isLutEnabled && currentLutTextureId != 0
             val needsFocusPeaking = isFocusPeakingEnabled
             
             when {
-                // 最复杂：ColorPalette + LUT + FocusPeaking
+                // 最复杂：LUT + ColorPalette + FocusPeaking
                 needsColorPalette && needsLut && needsFocusPeaking -> {
-                    drawColorPaletteToFbo(intermediateFbo, intermediateTexture)
-                    drawLutFromFboToFbo(intermediateTexture, intermediateFbo2, intermediateTexture2)
+                    drawLutToFbo(intermediateFbo)
+                    drawColorPalette2DToFbo(intermediateTexture, intermediateFbo2)
                     drawFocusPeakingFromFbo(intermediateTexture2)
                 }
-                // ColorPalette + LUT
+                // LUT + ColorPalette
                 needsColorPalette && needsLut -> {
-                    drawColorPaletteToFbo(intermediateFbo, intermediateTexture)
-                    drawLutFromFboToScreen(intermediateTexture)
+                    drawLutToFbo(intermediateFbo)
+                    drawColorPalette2DFromFboToScreen(intermediateTexture)
                 }
                 // ColorPalette + FocusPeaking
                 needsColorPalette && needsFocusPeaking -> {
@@ -933,15 +966,15 @@ class GLPreviewRenderer @Inject constructor(
                     drawToIntermediateFbo()
                     drawWithFocusPeaking()
                 }
-                // 仅 ColorPalette
+                // �?ColorPalette
                 needsColorPalette -> {
                     drawColorPaletteToScreen()
                 }
-                // 仅 LUT
+                // �?LUT
                 needsLut -> {
                     drawDirectToScreen()
                 }
-                // 仅 FocusPeaking
+                // �?FocusPeaking
                 needsFocusPeaking -> {
                     drawToIntermediateFbo()
                     drawWithFocusPeaking()
@@ -952,7 +985,7 @@ class GLPreviewRenderer @Inject constructor(
                 }
             }
 
-            // 交换缓冲区
+            // 交换缓冲�?
             EGL14.eglSwapBuffers(eglDisplay, eglSurface)
 
             // 更新帧率统计
@@ -970,6 +1003,32 @@ class GLPreviewRenderer @Inject constructor(
         } catch (e: Exception) {
             Timber.e(e, "Error drawing frame")
         }
+    }
+
+    private fun updateAdjustedTextureMatrix() {
+        if (cameraBufferWidth <= 0 || cameraBufferHeight <= 0 || surfaceWidth <= 0 || surfaceHeight <= 0) {
+            System.arraycopy(textureMatrix, 0, adjustedTextureMatrix, 0, textureMatrix.size)
+            return
+        }
+
+        val surfaceRatio = surfaceHeight.toFloat() / surfaceWidth.toFloat()
+        // SurfaceTexture 已包�?90° 旋转，因此这里使用反向比例做裁切
+        val bufferRatio = cameraBufferWidth.toFloat() / cameraBufferHeight.toFloat()
+        var scaleX = 1f
+        var scaleY = 1f
+
+        if (surfaceRatio > bufferRatio) {
+            scaleY = bufferRatio / surfaceRatio
+        } else if (surfaceRatio < bufferRatio) {
+            scaleX = surfaceRatio / bufferRatio
+        }
+
+        Matrix.setIdentityM(cropMatrix, 0)
+        Matrix.translateM(cropMatrix, 0, 0.5f, 0.5f, 0f)
+        Matrix.scaleM(cropMatrix, 0, scaleX, scaleY, 1f)
+        Matrix.translateM(cropMatrix, 0, -0.5f, -0.5f, 0f)
+
+        Matrix.multiplyMM(adjustedTextureMatrix, 0, textureMatrix, 0, cropMatrix, 0)
     }
     
     /**
@@ -1014,11 +1073,11 @@ class GLPreviewRenderer @Inject constructor(
             lutShader.setCameraTexture(cameraTextureId)
             lutShader.setLutTexture(currentLutTextureId, currentLutSize)
             lutShader.setIntensity(lutIntensity)
-            lutShader.setTextureMatrix(textureMatrix)
+            lutShader.setTextureMatrix(adjustedTextureMatrix)
         } else {
             passthroughShader.use()
             passthroughShader.setCameraTexture(cameraTextureId)
-            passthroughShader.setTextureMatrix(textureMatrix)
+            passthroughShader.setTextureMatrix(adjustedTextureMatrix)
         }
 
         GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
@@ -1030,7 +1089,7 @@ class GLPreviewRenderer @Inject constructor(
         GLES30.glViewport(0, 0, surfaceWidth, surfaceHeight)
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
 
-        // 渲染相机帧（带 LUT）
+        // 渲染相机帧（�?LUT�?
         setupVertexAttributes(
             if (isLutEnabled) lutShader.getPositionAttributeLocation() else passthroughShader.getPositionAttributeLocation(),
             if (isLutEnabled) lutShader.getTexCoordAttributeLocation() else passthroughShader.getTexCoordAttributeLocation()
@@ -1041,11 +1100,11 @@ class GLPreviewRenderer @Inject constructor(
             lutShader.setCameraTexture(cameraTextureId)
             lutShader.setLutTexture(currentLutTextureId, currentLutSize)
             lutShader.setIntensity(lutIntensity)
-            lutShader.setTextureMatrix(textureMatrix)
+            lutShader.setTextureMatrix(adjustedTextureMatrix)
         } else {
             passthroughShader.use()
             passthroughShader.setCameraTexture(cameraTextureId)
-            passthroughShader.setTextureMatrix(textureMatrix)
+            passthroughShader.setTextureMatrix(adjustedTextureMatrix)
         }
 
         GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
@@ -1076,7 +1135,7 @@ class GLPreviewRenderer @Inject constructor(
     // ==================== ColorPalette 渲染方法 ====================
     
     /**
-     * 仅直通渲染到屏幕（无任何效果）
+     * 仅直通渲染到屏幕（无任何效果�?
      */
     private fun drawPassthroughToScreen() {
         setupVertexAttributes(
@@ -1086,13 +1145,13 @@ class GLPreviewRenderer @Inject constructor(
         
         passthroughShader.use()
         passthroughShader.setCameraTexture(cameraTextureId)
-        passthroughShader.setTextureMatrix(textureMatrix)
+        passthroughShader.setTextureMatrix(adjustedTextureMatrix)
         
         GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
     }
     
     /**
-     * ColorPalette 渲染到屏幕
+     * ColorPalette 渲染到屏�?
      */
     private fun drawColorPaletteToScreen() {
         setupVertexAttributes(
@@ -1102,7 +1161,7 @@ class GLPreviewRenderer @Inject constructor(
         
         colorPaletteShader.use()
         colorPaletteShader.setCameraTexture(cameraTextureId)
-        colorPaletteShader.setTextureMatrix(textureMatrix)
+        colorPaletteShader.setTextureMatrix(adjustedTextureMatrix)
         colorPaletteShader.applyParams(
             colorPaletteTemperatureRgb,
             colorPaletteSaturation,
@@ -1114,7 +1173,7 @@ class GLPreviewRenderer @Inject constructor(
     }
     
     /**
-     * ColorPalette 渲染到 FBO
+     * ColorPalette 渲染�?FBO
      */
     private fun drawColorPaletteToFbo(fbo: Int, texture: Int) {
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fbo)
@@ -1128,7 +1187,7 @@ class GLPreviewRenderer @Inject constructor(
         
         colorPaletteShader.use()
         colorPaletteShader.setCameraTexture(cameraTextureId)
-        colorPaletteShader.setTextureMatrix(textureMatrix)
+        colorPaletteShader.setTextureMatrix(adjustedTextureMatrix)
         colorPaletteShader.applyParams(
             colorPaletteTemperatureRgb,
             colorPaletteSaturation,
@@ -1139,9 +1198,84 @@ class GLPreviewRenderer @Inject constructor(
         GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
     }
+
+    /**
+     * 先应�?LUT 到中�?FBO（OES 相机输入�?     */
+    private fun drawLutToFbo(outputFbo: Int) {
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, outputFbo)
+        GLES30.glViewport(0, 0, surfaceWidth, surfaceHeight)
+        GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
+
+        setupVertexAttributes(
+            lutShader.getPositionAttributeLocation(),
+            lutShader.getTexCoordAttributeLocation()
+        )
+
+        lutShader.use()
+        lutShader.setCameraTexture(cameraTextureId)
+        lutShader.setLutTexture(currentLutTextureId, currentLutSize)
+        lutShader.setIntensity(lutIntensity)
+        lutShader.setTextureMatrix(adjustedTextureMatrix)
+
+        GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
+    }
+
+    /**
+     * 使用 2D 纹理应用调色盘到屏幕
+     */
+    private fun drawColorPalette2DFromFboToScreen(inputTexture: Int) {
+        GLES30.glViewport(0, 0, surfaceWidth, surfaceHeight)
+
+        val fullscreenBuffer = textureManager.createFullscreenQuadBuffer()
+        setupVertexAttributes(
+            colorPalette2DShader.getPositionAttributeLocation(),
+            colorPalette2DShader.getTexCoordAttributeLocation(),
+            fullscreenBuffer
+        )
+
+        colorPalette2DShader.use()
+        colorPalette2DShader.setTexture(inputTexture)
+        colorPalette2DShader.applyParams(
+            colorPaletteTemperatureRgb,
+            colorPaletteSaturation,
+            colorPaletteTone,
+            true
+        )
+
+        GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
+    }
+
+    /**
+     * 使用 2D 纹理应用调色盘到 FBO
+     */
+    private fun drawColorPalette2DToFbo(inputTexture: Int, outputFbo: Int) {
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, outputFbo)
+        GLES30.glViewport(0, 0, surfaceWidth, surfaceHeight)
+        GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
+
+        val fullscreenBuffer = textureManager.createFullscreenQuadBuffer()
+        setupVertexAttributes(
+            colorPalette2DShader.getPositionAttributeLocation(),
+            colorPalette2DShader.getTexCoordAttributeLocation(),
+            fullscreenBuffer
+        )
+
+        colorPalette2DShader.use()
+        colorPalette2DShader.setTexture(inputTexture)
+        colorPalette2DShader.applyParams(
+            colorPaletteTemperatureRgb,
+            colorPaletteSaturation,
+            colorPaletteTone,
+            true
+        )
+
+        GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
+    }
     
     /**
-     * 从 FBO 应用 LUT 渲染到屏幕
+     * �?FBO 应用 LUT 渲染到屏�?
      */
     private fun drawLutFromFboToScreen(inputTexture: Int) {
         GLES30.glViewport(0, 0, surfaceWidth, surfaceHeight)
@@ -1155,8 +1289,8 @@ class GLPreviewRenderer @Inject constructor(
         )
         
         lutShader.use()
-        // 注意：这里需要使用 2D 纹理而不是 OES 纹理
-        // 但由于 LutShader 设计为接受 OES，我们使用单位矩阵并直接渲染
+        // 注意：这里需要使�?2D 纹理而不�?OES 纹理
+        // 但由�?LutShader 设计为接�?OES，我们使用单位矩阵并直接渲染
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, inputTexture)
         lutShader.setLutTexture(currentLutTextureId, currentLutSize)
@@ -1171,7 +1305,7 @@ class GLPreviewRenderer @Inject constructor(
     }
     
     /**
-     * 从 FBO 应用 LUT 渲染到另一个 FBO
+     * �?FBO 应用 LUT 渲染到另一�?FBO
      */
     private fun drawLutFromFboToFbo(inputTexture: Int, outputFbo: Int, outputTexture: Int) {
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, outputFbo)
@@ -1200,7 +1334,7 @@ class GLPreviewRenderer @Inject constructor(
     }
     
     /**
-     * 从 FBO 应用峰值对焦渲染到屏幕
+     * �?FBO 应用峰值对焦渲染到屏幕
      */
     private fun drawFocusPeakingFromFbo(inputTexture: Int) {
         GLES30.glViewport(0, 0, surfaceWidth, surfaceHeight)
@@ -1283,7 +1417,7 @@ class GLPreviewRenderer @Inject constructor(
         currentLutTextureId = 0
         isLutEnabled = false
         
-        // 重置 ColorPalette 状态
+        // 重置 ColorPalette 状�?
         isColorPaletteEnabled = false
         colorPaletteTemperatureRgb = floatArrayOf(1f, 1f, 1f)
         colorPaletteSaturation = 1f
@@ -1335,7 +1469,7 @@ class GLPreviewRenderer @Inject constructor(
     }
 
     /**
-     * 渲染器状态
+     * 渲染器状�?
      */
     sealed class RendererState {
         data object Idle : RendererState()
@@ -1345,7 +1479,12 @@ class GLPreviewRenderer @Inject constructor(
     }
 
     companion object {
-        /** OpenGL ES 3.0 的 EGL 常量（Android SDK 中未直接暴露） */
+        /** OpenGL ES 3.0 �?EGL 常量（Android SDK 中未直接暴露�?*/
         private const val EGL_OPENGL_ES3_BIT_KHR = 0x40
     }
 }
+
+
+
+
+

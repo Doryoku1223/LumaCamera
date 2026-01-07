@@ -2,7 +2,10 @@ package com.luma.camera.lut
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
+import org.json.JSONArray
+import org.json.JSONObject
 import com.luma.camera.domain.model.LutFilter
 import com.luma.camera.domain.model.LutSize
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -18,14 +21,14 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * LUT 管理器
+ * LUT 管理�?
  *
- * 职责：
+ * 职责�?
  * - 管理内置和用户导入的 LUT
- * - 内置 LUT 从 res/raw/luts/ 或 assets/luts/ 读取
- * - 用户导入的 LUT 存储到应用私有目录
+ * - 内置 LUT �?res/raw/luts/ �?assets/luts/ 读取
+ * - 用户导入�?LUT 存储到应用私有目�?
  * - 提供 CRUD 操作
- * - 启动时预加载所有 LUT 到 GPU 显存
+ * - 启动时预加载所�?LUT �?GPU 显存
  */
 @Singleton
 class LutManager @Inject constructor(
@@ -35,29 +38,9 @@ class LutManager @Inject constructor(
 ) {
     companion object {
         private const val ASSETS_LUT_DIR = "luts"
+        private const val ASSETS_LUT_THUMB_DIR = "lut_thumbs"
         private const val TAG = "LutManager"
         
-        // LUT 文件名到中文显示名称的映射
-        private val LUT_DISPLAY_NAMES = mapOf(
-            "eterna" to "电影质感",
-            "eterna_bb" to "电影漂白",
-            "classic_chrome" to "经典铬色",
-            "classic_neg" to "经典负片",
-            "astia" to "柔和人像",
-            "pro_neg_std" to "专业人像",
-            "provia" to "标准鲜艳",
-            "velvia" to "风光鲜艳",
-            "cold" to "冷色调",
-            "warm" to "暖色调",
-            "hasselblad_portrait" to "哈苏人像",
-            "forest_green" to "森系绿调",
-            "warm_skin" to "暖调肤色",
-            "beach_portrait" to "海边人像",
-            "sunset" to "夕阳暖调",
-            "snow_portrait" to "雪景清冷"
-        )
-        
-        // res/raw/luts/ 目录下的 LUT 文件列表
         private val RAW_LUT_FILES = listOf(
             "eterna",
             "eterna_bb",
@@ -82,7 +65,7 @@ class LutManager @Inject constructor(
     private val _lutFilters = MutableStateFlow<List<LutFilter>>(emptyList())
     val lutFilters: StateFlow<List<LutFilter>> = _lutFilters.asStateFlow()
 
-    // 当前选中的 LUT
+    // 当前选中�?LUT
     private val _currentLut = MutableStateFlow<LutFilter?>(null)
     val currentLut: StateFlow<LutFilter?> = _currentLut.asStateFlow()
 
@@ -90,7 +73,7 @@ class LutManager @Inject constructor(
     private val _lutIntensity = MutableStateFlow(1.0f)
     val lutIntensity: StateFlow<Float> = _lutIntensity.asStateFlow()
     
-    // 初始化状态
+    // 初始化状�?
     private val _isInitialized = MutableStateFlow(false)
     val isInitialized: StateFlow<Boolean> = _isInitialized.asStateFlow()
 
@@ -102,33 +85,55 @@ class LutManager @Inject constructor(
         File(context.filesDir, "user_luts").apply { mkdirs() }
     }
 
+    private val lutThumbnailDir: File by lazy {
+        File(context.filesDir, "lut_thumbs").apply { mkdirs() }
+    }
+
+    private val metadataFile: File by lazy {
+        File(context.filesDir, "lut_metadata.json")
+    }
+
+    private val customThumbnailIds = mutableSetOf<String>()
+
+    private data class LutMetadata(
+        val name: String?,
+        val sortOrder: Int?,
+        val thumbnailPath: String?,
+        val pinned: Boolean?,
+        val thumbnailCustom: Boolean?
+    )
+
     /**
-     * 初始化，快速加载 LUT 列表（不预加载数据）
+     * 初始化，快速加�?LUT 列表（不预加载数据）
      */
     suspend fun initialize() = withContext(Dispatchers.IO) {
         Timber.d("Initializing LutManager...")
         val startTime = System.currentTimeMillis()
         val filters = mutableListOf<LutFilter>()
 
-        // 快速加载内置 LUT 列表（只读取元数据，不解析 LUT 数据）
+        // 快速加载内�?LUT 列表（只读取元数据，不解�?LUT 数据�?
         filters.addAll(loadBuiltInLutsQuick())
 
-        // 加载用户导入的 LUT
+        // 加载用户导入�?LUT
         filters.addAll(loadUserLutsQuick())
 
-        // 按排序顺序排列
-        _lutFilters.value = filters.sortedBy { it.sortOrder }
+        // 按排序顺序排�?
+        val mergedFilters = applyMetadata(filters)
+        val seededFilters = seedBuiltInThumbnails(mergedFilters)
+        val orderedFilters = sortLuts(seededFilters)
+        _lutFilters.value = orderedFilters
+        persistMetadata(_lutFilters.value)
         _isInitialized.value = true
 
         val loadTime = System.currentTimeMillis() - startTime
         Timber.d("LUT list loaded in ${loadTime}ms (${filters.size} LUTs)")
 
-        // 后台预加载 LUT 数据到 GPU（不阻塞 UI）
+        // 后台预加�?LUT 数据�?GPU（不阻塞 UI�?
         preloadToGpuAsync()
     }
     
     /**
-     * 快速加载内置 LUT 列表（只创建 LutFilter，不解析数据）
+     * 快速加载内�?LUT 列表（只创建 LutFilter，不解析数据�?
      */
     private fun loadBuiltInLutsQuick(): List<LutFilter> {
         val filters = mutableListOf<LutFilter>()
@@ -143,7 +148,7 @@ class LutManager @Inject constructor(
                 if (fileName.endsWith(".cube") || fileName.endsWith(".3dl")) {
                     val lutName = fileName.substringBeforeLast(".")
                     val lutId = "builtin_$fileName"
-                    val displayName = LUT_DISPLAY_NAMES[lutName] ?: lutName
+                    val displayName = lutName
                     
                     filters.add(
                         LutFilter(
@@ -165,7 +170,7 @@ class LutManager @Inject constructor(
     }
     
     /**
-     * 快速加载用户 LUT 列表
+     * 快速加载用�?LUT 列表
      */
     private fun loadUserLutsQuick(): List<LutFilter> {
         val filters = mutableListOf<LutFilter>()
@@ -176,7 +181,7 @@ class LutManager @Inject constructor(
             filters.add(
                 LutFilter(
                     id = file.name,
-                    name = file.nameWithoutExtension,
+                        name = file.nameWithoutExtension,
                     filePath = file.absolutePath,
                     isBuiltIn = false,
                     sortOrder = 1000 + index,
@@ -187,9 +192,120 @@ class LutManager @Inject constructor(
 
         return filters
     }
+
+    private fun applyMetadata(filters: List<LutFilter>): List<LutFilter> {
+        val metadata = readMetadata()
+        return filters.map { filter ->
+            val meta = metadata[filter.id]
+            if (meta?.thumbnailCustom == true) {
+                customThumbnailIds.add(filter.id)
+            }
+            filter.copy(
+                name = meta?.name ?: filter.name,
+                sortOrder = meta?.sortOrder ?: filter.sortOrder,
+                thumbnailPath = meta?.thumbnailPath ?: filter.thumbnailPath,
+                isPinned = meta?.pinned ?: filter.isPinned
+            )
+        }
+    }
+
+
+    private fun sortLuts(filters: List<LutFilter>): List<LutFilter> {
+        return filters.sortedWith(compareByDescending<LutFilter> { it.isPinned }.thenBy { it.sortOrder })
+    }
+
+    private fun normalizeSortOrder(filters: List<LutFilter>): List<LutFilter> {
+        val pinned = filters.filter { it.isPinned }
+        val others = filters.filter { !it.isPinned }
+        val pinnedList = pinned.map { it.copy(sortOrder = 0) }
+        val startIndex = if (pinnedList.isNotEmpty()) 1 else 0
+        val normalizedOthers = others.mapIndexed { index, filter ->
+            filter.copy(sortOrder = startIndex + index)
+        }
+        return pinnedList + normalizedOthers
+    }
+
+    private fun getBuiltInThumbnailAssetName(filter: LutFilter): String? {
+        if (!filter.isBuiltIn) return null
+        val fileName = filter.filePath.substringAfterLast("/")
+        val baseName = fileName.substringBeforeLast(".")
+        return "$baseName.png"
+    }
+
+    private fun seedBuiltInThumbnails(filters: List<LutFilter>): List<LutFilter> {
+        val assetManager = context.assets
+        return filters.map { filter ->
+            if (!filter.isBuiltIn) return@map filter
+            if (customThumbnailIds.contains(filter.id)) {
+                return@map filter
+            }
+            val assetName = getBuiltInThumbnailAssetName(filter) ?: return@map filter
+            val outFile = File(lutThumbnailDir, "${safeIdForFile(filter.id)}.png")
+            try {
+                assetManager.open("$ASSETS_LUT_THUMB_DIR/$assetName").use { input ->
+                    FileOutputStream(outFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to seed LUT thumbnail: $assetName")
+            }
+            if (outFile.exists()) filter.copy(thumbnailPath = outFile.absolutePath) else filter
+        }
+    }
+
+    private fun readMetadata(): Map<String, LutMetadata> {
+        if (!metadataFile.exists()) return emptyMap()
+        return try {
+            val content = metadataFile.readText()
+            val array = JSONArray(content)
+            val map = mutableMapOf<String, LutMetadata>()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val id = obj.optString("id")
+                if (id.isNotBlank()) {
+                    map[id] = LutMetadata(
+                        name = obj.optString("name").ifBlank { null },
+                        sortOrder = if (obj.has("sortOrder")) obj.optInt("sortOrder") else null,
+                        thumbnailPath = obj.optString("thumbnailPath").ifBlank { null },
+                        pinned = if (obj.has("pinned")) obj.optBoolean("pinned") else null,
+                        thumbnailCustom = if (obj.has("thumbnailCustom")) obj.optBoolean("thumbnailCustom") else null
+                    )
+                }
+            }
+            map
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to read LUT metadata")
+            emptyMap()
+        }
+    }
+
+    private fun persistMetadata(filters: List<LutFilter>) {
+        try {
+            val array = JSONArray()
+            filters.forEach { filter ->
+                val obj = JSONObject()
+                obj.put("id", filter.id)
+                obj.put("name", filter.name)
+                obj.put("sortOrder", filter.sortOrder)
+                obj.put("thumbnailPath", filter.thumbnailPath ?: JSONObject.NULL)
+                obj.put("pinned", filter.isPinned)
+                obj.put("thumbnailCustom", customThumbnailIds.contains(filter.id))
+                array.put(obj)
+            }
+            metadataFile.writeText(array.toString())
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to persist LUT metadata")
+        }
+    }
+
+    private fun safeIdForFile(lutId: String): String {
+        return lutId.replace(Regex("[^A-Za-z0-9._-]"), "_")
+    }
+
     
     /**
-     * 异步预加载 LUT 到 GPU
+     * 异步预加�?LUT �?GPU
      */
     private suspend fun preloadToGpuAsync() = withContext(Dispatchers.IO) {
         Timber.d("Starting async LUT preload...")
@@ -197,7 +313,7 @@ class LutManager @Inject constructor(
         
         for (filter in _lutFilters.value) {
             try {
-                // 懒加载 LUT 数据
+                // 懒加�?LUT 数据
                 val lutData = loadLutData(filter)
                 if (lutData != null) {
                     lutDataCache[filter.id] = lutData
@@ -213,15 +329,15 @@ class LutManager @Inject constructor(
     }
     
     /**
-     * 加载单个 LUT 的数据
+     * 加载单个 LUT 的数�?
      */
     private fun loadLutData(filter: LutFilter): LutParser.LutData? {
-        // 先检查缓存
+        // 先检查缓�?
         lutDataCache[filter.id]?.let { return it }
         
         return try {
             if (filter.filePath.startsWith("assets://")) {
-                // 从 assets 加载
+                // �?assets 加载
                 val assetPath = filter.filePath.removePrefix("assets://")
                 val inputStream = context.assets.open(assetPath)
                 if (filter.filePath.endsWith(".cube")) {
@@ -230,7 +346,7 @@ class LutManager @Inject constructor(
                     lutParser.parse3dlStream(inputStream, filter.name)
                 }
             } else {
-                // 从文件加载
+                // 从文件加�?
                 lutParser.parseFromFile(File(filter.filePath))
             }
         } catch (e: Exception) {
@@ -240,7 +356,7 @@ class LutManager @Inject constructor(
     }
     
     /**
-     * 确保 LUT 已加载（按需加载）
+     * 确保 LUT 已加载（按需加载�?
      */
     suspend fun ensureLutLoaded(lutId: String) = withContext(Dispatchers.IO) {
         if (lutDataCache.containsKey(lutId)) return@withContext
@@ -254,20 +370,20 @@ class LutManager @Inject constructor(
     }
 
     /**
-     * 初始化，加载所有 LUT（兼容旧代码，现在是异步的）
+     * 初始化，加载所�?LUT（兼容旧代码，现在是异步的）
      */
     @Deprecated("Use initialize() which is now async", ReplaceWith("initialize()"))
     suspend fun initializeLegacy() = withContext(Dispatchers.IO) {
         Timber.d("Initializing LutManager (legacy)...")
         val filters = mutableListOf<LutFilter>()
 
-        // 加载内置 LUT (从 assets/luts/)
+        // 加载内置 LUT (�?assets/luts/)
         filters.addAll(loadBuiltInLuts())
 
-        // 加载用户导入的 LUT
+        // 加载用户导入�?LUT
         filters.addAll(loadUserLuts())
 
-        // 按排序顺序排列
+        // 按排序顺序排�?
         _lutFilters.value = filters.sortedBy { it.sortOrder }
 
         Timber.d("Loaded ${filters.size} LUTs total")
@@ -277,7 +393,7 @@ class LutManager @Inject constructor(
     }
 
     /**
-     * 加载内置 LUT (从 assets/luts/)
+     * 加载内置 LUT (�?assets/luts/)
      */
     private fun loadBuiltInLuts(): List<LutFilter> {
         val filters = mutableListOf<LutFilter>()
@@ -303,7 +419,7 @@ class LutManager @Inject constructor(
                         lutDataCache[lutId] = lutData
                         
                         // 使用中文显示名称，如果没有映射则使用原始标题
-                        val displayName = LUT_DISPLAY_NAMES[lutName] ?: lutData.title
+                        val displayName = lutName
 
                         filters.add(
                             LutFilter(
@@ -330,7 +446,7 @@ class LutManager @Inject constructor(
     }
 
     /**
-     * 加载用户导入的 LUT
+     * 加载用户导入�?LUT
      */
     private fun loadUserLuts(): List<LutFilter> {
         val filters = mutableListOf<LutFilter>()
@@ -345,7 +461,7 @@ class LutManager @Inject constructor(
                 filters.add(
                     LutFilter(
                         id = file.name,
-                        name = lutData.title,
+                        name = file.nameWithoutExtension,
                         filePath = file.absolutePath,
                         isBuiltIn = false,
                         sortOrder = 1000 + index,
@@ -353,7 +469,7 @@ class LutManager @Inject constructor(
                     )
                 )
             } catch (e: Exception) {
-                // 跳过无法解析的文件
+                // 跳过无法解析的文�?
             }
         }
 
@@ -361,7 +477,7 @@ class LutManager @Inject constructor(
     }
 
     /**
-     * 预加载所有 LUT 到 GPU
+     * 预加载所�?LUT �?GPU
      */
     private suspend fun preloadToGpu() = withContext(Dispatchers.Default) {
         for ((id, lutData) in lutDataCache) {
@@ -373,7 +489,7 @@ class LutManager @Inject constructor(
      * 导入 LUT 文件
      */
     suspend fun importLut(sourceFile: File): LutFilter = withContext(Dispatchers.IO) {
-        // 复制到用户目录
+        // 复制到用户目�?
         val destFile = File(userLutDir, sourceFile.name)
         sourceFile.copyTo(destFile, overwrite = true)
 
@@ -384,18 +500,19 @@ class LutManager @Inject constructor(
         // 创建 LutFilter
         val filter = LutFilter(
             id = destFile.name,
-            name = lutData.title,
+            name = destFile.nameWithoutExtension,
             filePath = destFile.absolutePath,
             isBuiltIn = false,
             sortOrder = _lutFilters.value.size,
             size = lutParser.getLutSize(lutData.size)
         )
 
-        // 上传到 GPU
+        // 上传�?GPU
         gpuLutRenderer.uploadLut(filter.id, lutData)
 
         // 更新列表
         _lutFilters.value = _lutFilters.value + filter
+        persistMetadata(_lutFilters.value)
 
         filter
     }
@@ -427,29 +544,50 @@ class LutManager @Inject constructor(
         if (file.exists()) {
             file.delete()
         }
+        filter.thumbnailPath?.let { thumbPath ->
+            val thumbFile = File(thumbPath)
+            if (thumbFile.exists()) {
+                thumbFile.delete()
+            }
+        }
 
-        // 从 GPU 移除
+        // �?GPU 移除
         gpuLutRenderer.removeLut(lutId)
 
-        // 从缓存移除
+        // 从缓存移�?
         lutDataCache.remove(lutId)
 
         // 更新列表
         _lutFilters.value = _lutFilters.value.filter { it.id != lutId }
+        persistMetadata(_lutFilters.value)
 
         true
     }
 
     /**
-     * 重命名 LUT
+     * 重命�?LUT
      */
+    /**
+     * ����ɾ�� LUT
+     */
+    suspend fun deleteLuts(lutIds: List<String>): Int = withContext(Dispatchers.IO) {
+        var deleted = 0
+        for (lutId in lutIds) {
+            if (deleteLut(lutId)) {
+                deleted++
+            }
+        }
+        deleted
+    }
+
     suspend fun renameLut(lutId: String, newName: String): Boolean = withContext(Dispatchers.IO) {
         val filter = _lutFilters.value.find { it.id == lutId } ?: return@withContext false
 
         val updatedFilter = filter.copy(name = newName)
-        _lutFilters.value = _lutFilters.value.map { 
-            if (it.id == lutId) updatedFilter else it 
+        _lutFilters.value = _lutFilters.value.map {
+            if (it.id == lutId) updatedFilter else it
         }
+        persistMetadata(_lutFilters.value)
 
         true
     }
@@ -457,15 +595,74 @@ class LutManager @Inject constructor(
     /**
      * 调整 LUT 排序
      */
+    /**
+     * ���� LUT ����ͼ
+     */
+    suspend fun updateLutThumbnail(lutId: String, uri: Uri): Boolean = withContext(Dispatchers.IO) {
+        val filter = _lutFilters.value.find { it.id == lutId } ?: return@withContext false
+        try {
+            val resolver = context.contentResolver
+            val input = resolver.openInputStream(uri) ?: return@withContext false
+            val bitmap = input.use { BitmapFactory.decodeStream(it) } ?: return@withContext false
+            val fileName = "${safeIdForFile(lutId)}.jpg"
+            val outFile = File(lutThumbnailDir, fileName)
+            FileOutputStream(outFile).use { output ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 85, output)
+            }
+            if (filter.isBuiltIn) {
+                customThumbnailIds.add(lutId)
+            }
+            if (filter.isBuiltIn) {
+                customThumbnailIds.add(lutId)
+            }
+            val updated = filter.copy(thumbnailPath = outFile.absolutePath)
+            _lutFilters.value = _lutFilters.value.map {
+                if (it.id == lutId) updated else it
+            }
+            persistMetadata(_lutFilters.value)
+            true
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to update LUT thumbnail")
+            false
+        }
+    }
+    suspend fun updateLutThumbnailBitmap(lutId: String, bitmap: Bitmap): Boolean = withContext(Dispatchers.IO) {
+        val filter = _lutFilters.value.find { it.id == lutId } ?: return@withContext false
+        try {
+            val fileName = "${safeIdForFile(lutId)}.jpg"
+            val outFile = File(lutThumbnailDir, fileName)
+            FileOutputStream(outFile).use { output ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 85, output)
+            }
+            val updated = filter.copy(thumbnailPath = outFile.absolutePath)
+            _lutFilters.value = _lutFilters.value.map {
+                if (it.id == lutId) updated else it
+            }
+            persistMetadata(_lutFilters.value)
+            true
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to update LUT thumbnail bitmap")
+            false
+        }
+    }
+
     fun reorderLuts(fromIndex: Int, toIndex: Int) {
         val list = _lutFilters.value.toMutableList()
         val item = list.removeAt(fromIndex)
         list.add(toIndex, item)
 
-        // 更新排序序号
-        _lutFilters.value = list.mapIndexed { index, filter ->
-            filter.copy(sortOrder = index)
+        val normalized = normalizeSortOrder(list)
+        _lutFilters.value = sortLuts(normalized)
+        persistMetadata(_lutFilters.value)
+    }
+
+    fun pinLut(lutId: String) {
+        val updated = _lutFilters.value.map { filter ->
+            if (filter.id == lutId) filter.copy(isPinned = true) else filter.copy(isPinned = false)
         }
+        val normalized = normalizeSortOrder(updated)
+        _lutFilters.value = sortLuts(normalized)
+        persistMetadata(_lutFilters.value)
     }
 
     /**
@@ -494,7 +691,7 @@ class LutManager @Inject constructor(
         lutId: String,
         intensity: Float = 1.0f
     ): Bitmap = withContext(Dispatchers.Default) {
-        // 确保 LUT 数据已加载
+        // 确保 LUT 数据已加�?
         ensureLutLoaded(lutId)
         
         val lutData = lutDataCache[lutId]
@@ -508,14 +705,14 @@ class LutManager @Inject constructor(
     }
     
     /**
-     * 高性能 CPU 实现的 LUT 应用
+     * 高性能 CPU 实现�?LUT 应用
      * 
-     * 优化策略：
+     * 优化策略�?
      * 1. 使用 Java 并行流进行真正的并行处理
-     * 2. 完全内联三线性插值，消除所有函数调用
-     * 3. 避免在热循环中使用 coerceIn/floor 等函数
-     * 4. 使用位运算优化整数操作
-     * 5. 预计算所有常量
+     * 2. 完全内联三线性插值，消除所有函数调�?
+     * 3. 避免在热循环中使�?coerceIn/floor 等函�?
+     * 4. 使用位运算优化整数操�?
+     * 5. 预计算所有常�?
      */
     private fun applyCpuLutOptimized(input: Bitmap, lutData: LutParser.LutData, intensity: Float): Bitmap {
         val width = input.width
@@ -530,11 +727,11 @@ class LutManager @Inject constructor(
         val sizeMinusOne = size - 1
         val sizeSq = size * size
         
-        // 预计算归一化常量
+        // 预计算归一化常�?
         val invSize = 1f / size
         val sizeF = size.toFloat()
         
-        // 使用分块处理优化性能（Android 上 Java Stream 效率低）
+        // 使用分块处理优化性能（Android �?Java Stream 效率低）
         val numCores = Runtime.getRuntime().availableProcessors()
         val chunkSize = (totalPixels + numCores - 1) / numCores
         val threads = Array(numCores) { threadIdx ->
@@ -548,20 +745,20 @@ class LutManager @Inject constructor(
                     val g = (pixel shr 8) and 0xFF
                     val b = pixel and 0xFF
             
-            // ===== 优化的三线性插值 =====
-            // 直接计算 LUT 索引，避免归一化步骤
-            // 原公式: coord = (color/255) * (size-1)/size + 0.5/size
+            // ===== 优化的三线性插�?=====
+            // 直接计算 LUT 索引，避免归一化步�?
+            // 原公�? coord = (color/255) * (size-1)/size + 0.5/size
             // 简化为: idx = coord * size - 0.5 = color * (size-1) / 255 + 0.5 - 0.5 = color * (size-1) / 255
             val rIdxF = r * sizeMinusOne / 255f
             val gIdxF = g * sizeMinusOne / 255f
             val bIdxF = b * sizeMinusOne / 255f
             
-            // 获取整数部分和小数部分
+            // 获取整数部分和小数部�?
             val r0 = rIdxF.toInt()
             val g0 = gIdxF.toInt()
             val b0 = bIdxF.toInt()
             
-            // 确保不越界
+            // 确保不越�?
             val r0c = if (r0 < 0) 0 else if (r0 > sizeMinusOne) sizeMinusOne else r0
             val g0c = if (g0 < 0) 0 else if (g0 > sizeMinusOne) sizeMinusOne else g0
             val b0c = if (b0 < 0) 0 else if (b0 > sizeMinusOne) sizeMinusOne else b0
@@ -569,7 +766,7 @@ class LutManager @Inject constructor(
             val g1c = if (g0c >= sizeMinusOne) sizeMinusOne else g0c + 1
             val b1c = if (b0c >= sizeMinusOne) sizeMinusOne else b0c + 1
             
-            // 计算插值权重
+            // 计算插值权�?
             var rFrac = rIdxF - r0c
             var gFrac = gIdxF - g0c
             var bFrac = bIdxF - b0c
@@ -590,7 +787,7 @@ class LutManager @Inject constructor(
             val base110 = (b0c * sizeSq + g1c * size + r1c) * 3
             val base111 = (b1c * sizeSq + g1c * size + r1c) * 3
             
-            // R 通道三线性插值（完全内联）
+            // R 通道三线性插值（完全内联�?
             val r000 = data[base000]
             val r001 = data[base001]
             val r010 = data[base010]
@@ -607,7 +804,7 @@ class LutManager @Inject constructor(
             val rr1 = r01 * gFracInv + r11 * gFrac
             val newRf = (rr0 * bFracInv + rr1 * bFrac) * 255f
             
-            // G 通道三线性插值
+            // G 通道三线性插�?
             val g000 = data[base000 + 1]
             val g001 = data[base001 + 1]
             val g010 = data[base010 + 1]
@@ -624,7 +821,7 @@ class LutManager @Inject constructor(
             val gg1 = g01 * gFracInv + g11 * gFrac
             val newGf = (gg0 * bFracInv + gg1 * bFrac) * 255f
             
-            // B 通道三线性插值
+            // B 通道三线性插�?
             val b000 = data[base000 + 2]
             val b001 = data[base001 + 2]
             val b010 = data[base010 + 2]
@@ -654,9 +851,9 @@ class LutManager @Inject constructor(
             }
         }
         
-        // 启动所有线程
+        // 启动所有线�?
         threads.forEach { it.start() }
-        // 等待所有线程完成
+        // 等待所有线程完�?
         threads.forEach { it.join() }
         
         val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
@@ -665,7 +862,7 @@ class LutManager @Inject constructor(
     }
     
     /**
-     * 三线性插值 LUT 查找（与 GPU shader 完全一致的算法）
+     * 三线性插�?LUT 查找（与 GPU shader 完全一致的算法�?
      * @return FloatArray [r, g, b] 范围 0-255
      */
     private fun trilinearLutLookup(r: Int, g: Int, b: Int, data: FloatArray, size: Int): FloatArray {
@@ -674,20 +871,20 @@ class LutManager @Inject constructor(
         val gNorm = g / 255f
         val bNorm = b / 255f
         
-        // 与 GPU shader 完全一致的坐标计算
+        // �?GPU shader 完全一致的坐标计算
         // GPU: vec3 lutCoord = color * scale + offset
         // scale = (size - 1.0) / size, offset = 0.5 / size
-        // 这会将 [0,1] 映射到 LUT 的有效采样区域 [0.5/size, 1-0.5/size]
+        // 这会�?[0,1] 映射�?LUT 的有效采样区�?[0.5/size, 1-0.5/size]
         val scale = (size - 1f) / size
         val offset = 0.5f / size
         
-        // lutCoord 范围是 [0.5/size, 1-0.5/size]，对应 LUT 索引 [0, size-1]
+        // lutCoord 范围�?[0.5/size, 1-0.5/size]，对�?LUT 索引 [0, size-1]
         val rLutCoord = rNorm * scale + offset
         val gLutCoord = gNorm * scale + offset
         val bLutCoord = bNorm * scale + offset
         
-        // 将归一化坐标转换为连续索引（0 到 size-1 范围）
-        // texCoord * size - 0.5 给出精确的索引位置
+        // 将归一化坐标转换为连续索引�? �?size-1 范围�?
+        // texCoord * size - 0.5 给出精确的索引位�?
         val rIdx = rLutCoord * size - 0.5f
         val gIdx = gLutCoord * size - 0.5f
         val bIdx = bLutCoord * size - 0.5f
@@ -704,9 +901,9 @@ class LutManager @Inject constructor(
         val gFrac = (gIdx - g0).coerceIn(0f, 1f)
         val bFrac = (bIdx - b0).coerceIn(0f, 1f)
         
-        // 获取 8 个角的 LUT 值
-        // CUBE 标准格式：R 变化最快，G 次之，B 最慢
-        // 即数据按照 for B: for G: for R: 顺序排列
+        // 获取 8 个角�?LUT �?
+        // CUBE 标准格式：R 变化最快，G 次之，B 最�?
+        // 即数据按�?for B: for G: for R: 顺序排列
         // 索引 = B * size² + G * size + R
         fun getLutValue(ri: Int, gi: Int, bi: Int): FloatArray {
             val index = (bi * size * size + gi * size + ri) * 3
@@ -717,7 +914,7 @@ class LutManager @Inject constructor(
             }
         }
         
-        // 8 个角的值
+        // 8 个角的�?
         val c000 = getLutValue(r0, g0, b0)
         val c001 = getLutValue(r0, g0, b1)
         val c010 = getLutValue(r0, g1, b0)
@@ -727,20 +924,20 @@ class LutManager @Inject constructor(
         val c110 = getLutValue(r1, g1, b0)
         val c111 = getLutValue(r1, g1, b1)
         
-        // 三线性插值（与 GPU texture() 函数一致的插值顺序）
+        // 三线性插值（�?GPU texture() 函数一致的插值顺序）
         val result = FloatArray(3)
         for (channel in 0..2) {
-            // 沿 R 轴插值（最内层）
+            // �?R 轴插值（最内层�?
             val c00 = c000[channel] * (1 - rFrac) + c100[channel] * rFrac
             val c01 = c001[channel] * (1 - rFrac) + c101[channel] * rFrac
             val c10 = c010[channel] * (1 - rFrac) + c110[channel] * rFrac
             val c11 = c011[channel] * (1 - rFrac) + c111[channel] * rFrac
             
-            // 沿 G 轴插值
+            // �?G 轴插�?
             val c0 = c00 * (1 - gFrac) + c10 * gFrac
             val c1 = c01 * (1 - gFrac) + c11 * gFrac
             
-            // 沿 B 轴插值（最外层）
+            // �?B 轴插值（最外层�?
             result[channel] = c0 * (1 - bFrac) + c1 * bFrac
         }
         
@@ -755,24 +952,24 @@ class LutManager @Inject constructor(
     }
 
     /**
-     * 从 Uri 导入 LUT（用于 SAF 文件选择器）
+     * �?Uri 导入 LUT（用�?SAF 文件选择器）
      */
     suspend fun importLutFromUri(uri: Uri, displayName: String? = null): LutFilter? = withContext(Dispatchers.IO) {
         try {
             val contentResolver = context.contentResolver
             val inputStream = contentResolver.openInputStream(uri) ?: return@withContext null
 
-            // 确定文件名
+            // 确定文件�?
             val fileName = displayName ?: uri.lastPathSegment ?: "imported_lut.cube"
             val destFile = File(userLutDir, fileName)
 
-            // 复制到本地
+            // 复制到本�?
             FileOutputStream(destFile).use { output ->
                 inputStream.copyTo(output)
             }
             inputStream.close()
 
-            // 解析并导入
+            // 解析并导�?
             importLut(destFile)
         } catch (e: Exception) {
             Timber.e(e, "Failed to import LUT from URI: $uri")
@@ -781,7 +978,7 @@ class LutManager @Inject constructor(
     }
 
     /**
-     * 获取当前 LUT 的有效强度
+     * 获取当前 LUT 的有效强�?
      */
     fun getCurrentEffectiveIntensity(): Float {
         return if (_currentLut.value != null) _lutIntensity.value else 0f
@@ -795,19 +992,19 @@ class LutManager @Inject constructor(
     }
 
     /**
-     * 获取 LUT 预览（缩略图）
+     * 获取 LUT 预览（缩略图�?
      */
     suspend fun getLutPreview(lutId: String, sampleImage: Bitmap): Bitmap = withContext(Dispatchers.Default) {
         val lutData = lutDataCache[lutId]
         if (lutData != null) {
             gpuLutRenderer.apply(sampleImage, lutId, 1.0f)
         } else {
-            sampleImage
+            sampleImage.copy(Bitmap.Config.ARGB_8888, true)
         }
     }
 
     /**
-     * 导出 LUT 到外部存储
+     * 导出 LUT 到外部存�?
      */
     suspend fun exportLut(lutId: String, destUri: Uri): Boolean = withContext(Dispatchers.IO) {
         val filter = _lutFilters.value.find { it.id == lutId } ?: return@withContext false
@@ -831,3 +1028,21 @@ class LutManager @Inject constructor(
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

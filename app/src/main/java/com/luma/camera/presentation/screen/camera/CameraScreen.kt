@@ -1,31 +1,67 @@
-﻿package com.luma.camera.presentation.screen.camera
+package com.luma.camera.presentation.screen.camera
 
 import android.Manifest
 import android.content.Intent
-import android.provider.MediaStore
-import android.view.Surface
+import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.Highlight
+import androidx.compose.material.icons.outlined.CameraAlt
+import androidx.compose.material.icons.outlined.FlashAuto
+import androidx.compose.material.icons.outlined.FlashOff
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Photo
+import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.res.painterResource
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -34,20 +70,23 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import android.content.pm.PackageManager
-import com.luma.camera.domain.model.*
-import com.luma.camera.presentation.components.*
+import com.luma.camera.domain.model.AspectRatio
+import com.luma.camera.domain.model.CameraMode
+import com.luma.camera.domain.model.FlashMode
+import com.luma.camera.domain.model.GridType
+import com.luma.camera.domain.model.ManualParameters
+import com.luma.camera.domain.model.WhiteBalanceMode
+import com.luma.camera.presentation.components.CameraViewfinder
+import com.luma.camera.presentation.components.ColorPalettePanel
+import com.luma.camera.presentation.components.ExposureInfoDisplay
+import com.luma.camera.presentation.components.FocalLengthSelector
+import com.luma.camera.presentation.components.HistogramView
+import com.luma.camera.presentation.components.ModeSelector
+import com.luma.camera.presentation.components.ShutterButton
 import com.luma.camera.presentation.theme.LumaGold
 import com.luma.camera.presentation.viewmodel.CameraViewModel
 
-/**
- * 鐩告満涓荤晫闈? * 
- * 瀹屾暣鐨勭浉鏈虹晫闈㈠疄鐜帮紝鍖呮嫭锛? * - 120fps 鍙栨櫙鍣? * - 鐒︽鍒囨崲
- * - 妯″紡鍒囨崲
- * - Pro 妯″紡鍙傛暟鎺у埗
- * - LUT 婊ら暅閫夋嫨
- */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
 fun CameraScreen(
     onNavigateToSettings: () -> Unit,
@@ -58,16 +97,12 @@ fun CameraScreen(
     val settings by viewModel.settings.collectAsState()
     val lutFilters by viewModel.lutFilters.collectAsState()
     val levelAngle by viewModel.levelAngle.collectAsState()
-    val colorPresets by viewModel.colorPresets.collectAsState()
     val isProMode = cameraState.currentMode == CameraMode.PRO
-    var showLutSelector by remember { mutableStateOf(false) }
     var showProControls by remember { mutableStateOf(false) }
-    
-    // 瑙﹁鍙嶉
+
     val context = LocalContext.current
-    
-    // 鏉冮檺鐘舵€?
-var hasCameraPermission by remember {
+
+    var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
                 context,
@@ -75,25 +110,20 @@ var hasCameraPermission by remember {
             ) == PackageManager.PERMISSION_GRANTED
         )
     }
-    
-    // 鏉冮檺璇锋眰鍚姩鍣?
-val permissionLauncher = rememberLauncherForActivityResult(
+
+    val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         hasCameraPermission = permissions[Manifest.permission.CAMERA] == true
     }
-    
-    // LUT 鏂囦欢閫夋嫨鍣?
-val lutFilePicker = rememberLauncherForActivityResult(
+
+    val lutFilePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
-        uri?.let {
-            viewModel.importLut(it)
-        }
+        uri?.let { viewModel.importLut(it) }
     }
-    
-    // 棣栨鍚姩鏃惰姹傛潈闄?
-LaunchedEffect(Unit) {
+
+    LaunchedEffect(Unit) {
         if (!hasCameraPermission) {
             permissionLauncher.launch(
                 arrayOf(
@@ -103,29 +133,21 @@ LaunchedEffect(Unit) {
             )
         }
     }
-    
-    // 鐢熷懡鍛ㄦ湡澶勭悊 - 淇浠庣浉鍐岃繑鍥炲悗鐩告満鍗￠】
+
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> {
-                    // 浠庡悗鍙版垨鍏朵粬 Activity 杩斿洖鏃舵仮澶嶇浉鏈?                    viewModel.resumeCamera()
-                }
-                Lifecycle.Event.ON_PAUSE -> {
-                    // 杩涘叆鍚庡彴鎴栧垏鎹㈠埌鍏朵粬 Activity 鏃舵殏鍋滅浉鏈?                    viewModel.pauseCamera()
-                }
+                Lifecycle.Event.ON_RESUME -> viewModel.resumeCamera()
+                Lifecycle.Event.ON_PAUSE -> viewModel.pauseCamera()
                 else -> {}
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    
-    // 濡傛灉娌℃湁鐩告満鏉冮檺锛屾樉绀烘潈闄愯姹傜晫闈?
-if (!hasCameraPermission) {
+
+    if (!hasCameraPermission) {
         PermissionRequestScreen(
             onRequestPermission = {
                 permissionLauncher.launch(
@@ -138,21 +160,19 @@ if (!hasCameraPermission) {
         )
         return
     }
-    
-    // 妫€鏌ユ槸鍚﹂渶瑕佷娇鐢?GL 娓叉煋锛堟湁閫変腑鐨?LUT 鎴栧惎鐢ㄥ嘲鍊煎鐒︼級
-    // 濮嬬粓浣跨敤 GL 娓叉煋鍣ㄤ互閬垮厤杩愯鏃跺垏鎹㈠鑷寸殑 Surface 闂
-    // LUT 鍜屽嘲鍊煎鐒︽晥鏋滅敱 GL 娓叉煋鍣ㄥ唴閮ㄦ帶鍒跺紑鍏?
-val useGLRendering = true
-    
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // 鍙栨櫙鍣?- 濮嬬粓浣跨敤 GL 娓叉煋
         CameraViewfinder(
             aspectRatio = cameraState.aspectRatio,
-            gridType = if (settings.showGrid) GridType.RULE_OF_THIRDS else GridType.NONE,
+            gridType = if (settings.showGrid) {
+                settings.gridType.takeIf { it != GridType.NONE } ?: GridType.RULE_OF_THIRDS
+            } else {
+                GridType.NONE
+            },
             showLevel = settings.showLevel,
             levelAngle = levelAngle,
             glRenderer = viewModel.glPreviewRenderer,
@@ -161,13 +181,12 @@ val useGLRendering = true
             },
             onGLRendererSurfaceReady = { surface ->
                 viewModel.onGLPreviewSurfaceReady(surface)
-            },            onTouchFocus = { x, y, viewWidth, viewHeight ->
-                if (showProControls) {
-                    showProControls = false
-                } else if (showLutSelector) {
-                    showLutSelector = false
-                } else {
-                    viewModel.onTouchFocus(x, y, viewWidth, viewHeight)
+            },
+            onTouchFocus = { x, y, viewWidth, viewHeight ->
+                when {
+                    cameraState.isColorPalettePanelOpen -> viewModel.closeColorPalettePanel()
+                    showProControls -> showProControls = false
+                    else -> viewModel.onTouchFocus(x, y, viewWidth, viewHeight)
                 }
             },
             onSurfaceDestroyed = {
@@ -177,10 +196,8 @@ val useGLRendering = true
                 .fillMaxWidth()
                 .align(Alignment.Center)
         )
-        
-        // 宄板€煎鐒︾敱 GL 娓叉煋鍣ㄥ鐞嗭紝涓嶉渶瑕佸崟鐙殑鍙犲姞灞?        
-        // 鐩存柟鍥?
-if (settings.showHistogram) {
+
+        if (settings.showHistogram) {
             HistogramView(
                 redChannel = cameraState.histogramRed,
                 greenChannel = cameraState.histogramGreen,
@@ -192,9 +209,8 @@ if (settings.showHistogram) {
                     .size(120.dp, 80.dp)
             )
         }
-        
-        // 椤堕儴宸ュ叿鏍?
-CameraTopBar(
+
+        CameraTopBar(
             flashMode = cameraState.flashMode,
             onFlashModeChange = { viewModel.setFlashMode(it) },
             isLivePhotoEnabled = cameraState.isLivePhotoEnabled,
@@ -206,20 +222,18 @@ CameraTopBar(
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
         )
-        
-        // 鏇濆厜淇℃伅鏄剧ず (Pro 妯″紡)
+
         if (isProMode) {
             ExposureInfoDisplay(
                 iso = cameraState.manualParameters.iso,
                 shutterSpeed = cameraState.manualParameters.shutterSpeed?.let { "1/${it}s" },
-            modifier = Modifier
+                modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = 80.dp)
             )
         }
-        
-        // 搴曢儴鎺у埗鍖?
-Column(
+
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
@@ -227,40 +241,6 @@ Column(
                 .padding(bottom = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // LUT 閫夋嫨鍣?
-AnimatedVisibility(
-                visible = showLutSelector,
-                enter = slideInVertically { it } + fadeIn(),
-                exit = slideOutVertically { it } + fadeOut()
-            ) {
-                LutSelectorPanel(
-                    lutFilters = lutFilters,
-                    currentLut = cameraState.selectedLut,
-                    onLutSelected = { lut ->
-                        viewModel.selectLut(lut)
-                    },
-                    onIntensityChange = { intensity ->
-                        // 婊戝潡杩斿洖 0-1 鐨?Float锛岃浆鎹负 0-100 鐨?Int
-                        viewModel.setLutIntensity((intensity * 100).toInt())
-                    },
-                    onImportLut = {
-                        lutFilePicker.launch("*/*")
-                    },
-                    onManageLuts = {
-                        showLutSelector = false
-                        onNavigateToLutManager()
-                    },
-                    // 灏?0-100 鐨?Int 杞崲涓?0-1 鐨?Float
-                    intensity = cameraState.lutIntensity / 100f,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Pro 妯″紡鎺у埗闈㈡澘
             AnimatedVisibility(
                 visible = isProMode && showProControls,
                 enter = slideInVertically { it } + fadeIn(),
@@ -271,26 +251,24 @@ AnimatedVisibility(
                     onParametersChange = { params ->
                         viewModel.updateManualParameters { params }
                     },
-            modifier = Modifier
+                    modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(8.dp))
-            
-            // 鐒︽閫夋嫨鍣?
-FocalLengthSelector(
+
+            FocalLengthSelector(
                 currentFocalLength = cameraState.currentFocalLength,
                 onFocalLengthSelected = { focalLength ->
                     viewModel.switchFocalLength(focalLength)
                 }
             )
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
-            // 妯″紡閫夋嫨鍣?
-ModeSelector(
+
+            ModeSelector(
                 modes = listOf("Auto", "Pro"),
                 selectedIndex = when (cameraState.currentMode) {
                     CameraMode.PHOTO -> 0
@@ -303,8 +281,7 @@ ModeSelector(
                         1 -> CameraMode.PRO
                         else -> CameraMode.PHOTO
                     }
-                    // 濡傛灉宸茬粡鏄?Pro 妯″紡锛屽啀娆＄偣鍑诲垏鎹㈡帶鍒堕潰鏉挎樉绀?
-if (mode == CameraMode.PRO && cameraState.currentMode == CameraMode.PRO) {
+                    if (mode == CameraMode.PRO && cameraState.currentMode == CameraMode.PRO) {
                         showProControls = !showProControls
                     } else {
                         viewModel.switchMode(mode)
@@ -312,25 +289,22 @@ if (mode == CameraMode.PRO && cameraState.currentMode == CameraMode.PRO) {
                     }
                 }
             )
-            
+
             Spacer(modifier = Modifier.height(24.dp))
-            
-            // 搴曢儴鎿嶄綔鏍?
-Row(
+
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 鐩稿唽鍏ュ彛
                 Box(
                     modifier = Modifier
                         .size(48.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(Color.Gray.copy(alpha = 0.3f))
                         .clickable {
-                            // 鎵撳紑绯荤粺鐩稿唽
                             val intent = Intent(Intent.ACTION_VIEW).apply {
                                 type = "image/*"
                                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -341,14 +315,18 @@ Row(
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Photo,
-                        contentDescription = "鐩稿唽",
+                        contentDescription = "图库",
                         tint = Color.White,
                         modifier = Modifier.size(24.dp)
                     )
                 }
-                
-                // 璋冭壊鐩樻寜閽?
-Box(
+
+                ShutterButton(
+                    onClick = { viewModel.capturePhoto() },
+                    isCapturing = cameraState.isCapturing
+                )
+
+                Box(
                     modifier = Modifier
                         .size(44.dp)
                         .clip(CircleShape)
@@ -356,7 +334,13 @@ Box(
                             if (!cameraState.colorPalette.isDefault()) Color(0xFFD4A574).copy(alpha = 0.3f)
                             else Color.Gray.copy(alpha = 0.3f)
                         )
-                        .clickable { viewModel.openColorPalettePanel() },
+                        .clickable {
+                            if (cameraState.isColorPalettePanelOpen) {
+                                viewModel.closeColorPalettePanel()
+                            } else {
+                                viewModel.openColorPalettePanel()
+                            }
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -366,68 +350,44 @@ Box(
                         modifier = Modifier.size(22.dp)
                     )
                 }
-                
-                // 蹇棬鎸夐挳
-                ShutterButton(
-                    onClick = {
-                        viewModel.capturePhoto()
-                    },
-                    isCapturing = cameraState.isCapturing
-                )
-                
-                // LUT 婊ら暅鎸夐挳
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (cameraState.selectedLut != null) LumaGold.copy(alpha = 0.3f)
-                            else Color.Gray.copy(alpha = 0.3f)
-                        )
-                        .clickable { showLutSelector = !showLutSelector },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.FilterVintage,
-                        contentDescription = "婊ら暅",
-                        tint = if (cameraState.selectedLut != null) LumaGold else Color.White,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-                
             }
         }
-        
-        // 璋冭壊鐩橀潰鏉?
-ColorPalettePanel(
+
+        ColorPalettePanel(
             visible = cameraState.isColorPalettePanelOpen,
             palette = cameraState.colorPalette,
-            presets = colorPresets,
-            selectedPresetId = cameraState.selectedPresetId,
+            lutFilters = lutFilters,
+            currentLut = cameraState.selectedLut,
+            lutIntensity = cameraState.lutIntensity / 100f,
             onPaletteChange = { palette ->
                 viewModel.updateColorPalette(palette)
             },
-            onPresetSelect = { preset ->
-                viewModel.selectColorPreset(preset)
-            },
-            onSaveAsPreset = { name ->
-                viewModel.saveCurrentAsPreset(name)
-            },
             onResetAll = {
                 viewModel.resetColorPalette()
+            },
+            onLutSelected = { lut ->
+                viewModel.selectLut(lut)
+            },
+            onLutIntensityChange = { intensity ->
+                viewModel.setLutIntensity((intensity * 100).toInt())
+            },
+            onImportLut = {
+                lutFilePicker.launch("*/*")
+            },
+            onManageLuts = {
+                viewModel.closeColorPalettePanel()
+                onNavigateToLutManager()
             },
             onDismiss = {
                 viewModel.closeColorPalettePanel()
             },
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .align(Alignment.BottomCenter)
         )
     }
 }
 
-/**
- * 椤堕儴宸ュ叿鏍? */
 @Composable
 private fun CameraTopBar(
     flashMode: FlashMode,
@@ -440,43 +400,46 @@ private fun CameraTopBar(
     modifier: Modifier = Modifier
 ) {
     var showAspectRatioMenu by remember { mutableStateOf(false) }
-    
+
     Row(
         modifier = modifier
             .background(Color.Black.copy(alpha = 0.3f))
-            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+            .statusBarsPadding()
             .padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 闂厜鐏?
-        Box {
-            IconButton(onClick = {
-                val nextMode = when (flashMode) {
-                    FlashMode.OFF -> FlashMode.AUTO
-                    FlashMode.AUTO -> FlashMode.ON
-                    FlashMode.ON -> FlashMode.TORCH
-                    FlashMode.TORCH -> FlashMode.OFF
-                }
-                onFlashModeChange(nextMode)
-            }) {
-                Icon(
-                    imageVector = when (flashMode) {
-                        FlashMode.OFF -> Icons.Outlined.FlashOff
-                        FlashMode.AUTO -> Icons.Outlined.FlashAuto
-                        FlashMode.ON -> Icons.Filled.FlashOn
-                        FlashMode.TORCH -> Icons.Filled.Highlight
-                    },
-                    contentDescription = null,
-                    tint = when (flashMode) {
-                        FlashMode.OFF -> Color.White
-                        else -> LumaGold
-                    }
-                )
+        IconButton(onClick = {
+            val nextMode = when (flashMode) {
+                FlashMode.OFF -> FlashMode.AUTO
+                FlashMode.AUTO -> FlashMode.ON
+                FlashMode.ON -> FlashMode.TORCH
+                FlashMode.TORCH -> FlashMode.OFF
             }
+            onFlashModeChange(nextMode)
+        }) {
+            Icon(
+                imageVector = when (flashMode) {
+                    FlashMode.OFF -> Icons.Outlined.FlashOff
+                    FlashMode.AUTO -> Icons.Outlined.FlashAuto
+                    FlashMode.ON -> Icons.Filled.FlashOn
+                    FlashMode.TORCH -> Icons.Filled.Highlight
+                },
+                contentDescription = null,
+                tint = when (flashMode) {
+                    FlashMode.OFF -> Color.White
+                    else -> LumaGold
+                }
+            )
         }
-        
-        // 姣斾緥閫夋嫨
+
+        IconButton(onClick = onLivePhotoToggle) {
+            Icon(
+                imageVector = Icons.Outlined.PhotoCamera,
+                contentDescription = "实况",
+                tint = if (isLivePhotoEnabled) LumaGold else Color.White
+            )
+        }
 
         Box {
             TextButton(onClick = { showAspectRatioMenu = true }) {
@@ -485,18 +448,17 @@ private fun CameraTopBar(
                         AspectRatio.RATIO_16_9 -> "16:9"
                         AspectRatio.RATIO_4_3 -> "4:3"
                         AspectRatio.RATIO_1_1 -> "1:1"
-                        AspectRatio.RATIO_FULL -> "鍏ㄥ睆"
+                        AspectRatio.RATIO_FULL -> "全屏"
                     },
                     color = Color.White,
                     fontSize = 14.sp
                 )
             }
-            
+
             DropdownMenu(
                 expanded = showAspectRatioMenu,
                 onDismissRequest = { showAspectRatioMenu = false }
             ) {
-                // 鍙樉绀?4 涓瘮渚嬮€夐」锛屼笉鍖呭惈鍒悕
                 listOf(
                     AspectRatio.RATIO_4_3,
                     AspectRatio.RATIO_16_9,
@@ -510,7 +472,7 @@ private fun CameraTopBar(
                                     AspectRatio.RATIO_16_9 -> "16:9"
                                     AspectRatio.RATIO_4_3 -> "4:3"
                                     AspectRatio.RATIO_1_1 -> "1:1"
-                                    AspectRatio.RATIO_FULL -> "鍏ㄥ睆"
+                                    AspectRatio.RATIO_FULL -> "全屏"
                                 }
                             )
                         },
@@ -522,158 +484,17 @@ private fun CameraTopBar(
                 }
             }
         }
-        
-        // 璁剧疆
+
         IconButton(onClick = onSettingsClick) {
             Icon(
                 imageVector = Icons.Outlined.Settings,
-                contentDescription = "璁剧疆",
+                contentDescription = "设置",
                 tint = Color.White
             )
         }
     }
 }
 
-/**
- * LUT 閫夋嫨闈㈡澘
- */
-@Composable
-private fun LutSelectorPanel(
-    lutFilters: List<LutFilter>,
-    currentLut: LutFilter?,
-    onLutSelected: (LutFilter?) -> Unit,
-    onIntensityChange: (Float) -> Unit,
-    onImportLut: () -> Unit,
-    onManageLuts: () -> Unit,
-    intensity: Float,
-    modifier: Modifier = Modifier
-) {
-    // LUT 鏂囦欢鍚嶅埌涓枃鏄剧ず鍚嶇О鐨勬槧灏?
-    val lutDisplayNames = mapOf(
-        "eterna" to "Eterna",
-        "eterna_bb" to "Eterna BB",
-        "classic_chrome" to "Classic Chrome",
-        "classic_neg" to "Classic Neg",
-        "astia" to "Astia",
-        "pro_neg_std" to "Pro Neg Std",
-        "provia" to "Provia",
-        "velvia" to "Velvia",
-        "cold" to "Cool",
-        "warm" to "Warm",
-        "hasselblad_portrait" to "Hasselblad Portrait",
-        "forest_green" to "Forest Green",
-        "warm_skin" to "Warm Skin",
-        "beach_portrait" to "Beach Portrait",
-        "sunset" to "Sunset",
-        "snow_portrait" to "Snow Portrait"
-    )
-    
-    // 鑾峰彇 LUT 鐨勬樉绀哄悕绉?
-fun getLutDisplayName(lut: LutFilter): String {
-        // 浠?ID 鎴栨枃浠惰矾寰勪腑鎻愬彇鏂囦欢鍚?
-val fileName = lut.filePath
-            .substringAfterLast("/")
-            .substringBeforeLast(".")
-            .lowercase()
-        return lutDisplayNames[fileName] ?: lut.name
-    }
-    
-    Column(
-        modifier = modifier
-            .background(
-                Color.Black.copy(alpha = 0.8f),
-                RoundedCornerShape(16.dp)
-            )
-            .padding(16.dp)
-    ) {
-        // 鏍囬
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "LUT 婊ら暅 (${lutFilters.size})",
-                color = Color.White,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium
-            )
-            
-            Row {
-                // 绠＄悊鎸夐挳
-                IconButton(
-                    onClick = onManageLuts,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Settings,
-                        contentDescription = "绠＄悊 LUT",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                
-                if (currentLut != null) {
-                    TextButton(onClick = { onLutSelected(null) }) {
-                        Text(
-                            text = "娓呴櫎",
-                            color = LumaGold,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(12.dp))
-        
-        // LUT 鍒楄〃 - 浠?LutManager 鑾峰彇鐪熷疄鍒楄〃
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            // 鏃犳护闀?
-item {
-                LutPreviewThumbnail(
-                    lutName = "鍘熷浘",
-                    previewBitmap = null,
-                    isSelected = currentLut == null,
-                    onClick = { onLutSelected(null) }
-                )
-            }
-            
-            // 鏄剧ず鎵€鏈?LUT 婊ら暅
-            items(lutFilters) { lut ->
-                LutPreviewThumbnail(
-                    lutName = getLutDisplayName(lut),
-                    previewBitmap = null,
-                    isSelected = currentLut?.id == lut.id,
-                    onClick = { onLutSelected(lut) }
-                )
-            }
-            
-            // 瀵煎叆/绠＄悊 LUT 鎸夐挳
-            item {
-                LutImportButton(
-                    onClick = onImportLut
-                )
-            }
-        }
-        
-        // 寮哄害婊戝潡
-        if (currentLut != null) {
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            FilterIntensitySlider(
-                intensity = intensity,
-                onIntensityChange = onIntensityChange
-            )
-        }
-    }
-}
-
-/**
- * Pro 妯″紡鎺у埗闈㈡澘
- */
 @Composable
 private fun ProModeControlPanel(
     manualParameters: ManualParameters,
@@ -688,7 +509,6 @@ private fun ProModeControlPanel(
             )
             .padding(16.dp)
     ) {
-        // ISO 鎺у埗
         ParameterRow(
             label = "ISO",
             value = manualParameters.iso?.toString() ?: "AUTO",
@@ -698,12 +518,11 @@ private fun ProModeControlPanel(
                 onParametersChange(manualParameters.copy(iso = iso))
             }
         )
-        
+
         Spacer(modifier = Modifier.height(12.dp))
-        
-        // 蹇棬閫熷害
+
         ParameterRow(
-            label = "蹇棬",
+            label = "快门",
             value = manualParameters.shutterSpeed?.let { "1/${it.toInt()}s" } ?: "AUTO",
             values = listOf("AUTO", "1/4000", "1/2000", "1/1000", "1/500", "1/250", "1/125", "1/60", "1/30"),
             onValueChange = { value ->
@@ -713,13 +532,67 @@ private fun ProModeControlPanel(
                 onParametersChange(manualParameters.copy(shutterSpeed = speed))
             }
         )
-        
+
         Spacer(modifier = Modifier.height(12.dp))
-        
-        // 鐧藉钩琛?
-ParameterRow(
-            label = "White balance",
-            value = when(manualParameters.whiteBalanceMode) {
+
+        ParameterRow(
+            label = "对焦",
+            value = if (manualParameters.focusDistance == null) "AUTO" else "MANUAL",
+            values = listOf("AUTO", "MANUAL"),
+            onValueChange = { value ->
+                val distance = if (value == "AUTO") null else manualParameters.focusDistance ?: 0.5f
+                onParametersChange(manualParameters.copy(focusDistance = distance))
+            }
+        )
+
+        if (manualParameters.focusDistance != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "对焦",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 12.sp
+                )
+
+                Slider(
+                    value = manualParameters.focusDistance,
+                    onValueChange = { distance ->
+                        onParametersChange(
+                            manualParameters.copy(
+                                focusDistance = distance
+                            )
+                        )
+                    },
+                    valueRange = 0f..1f,
+                    steps = 99,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 16.dp),
+                    colors = SliderDefaults.colors(
+                        thumbColor = LumaGold,
+                        activeTrackColor = LumaGold
+                    )
+                )
+
+                Text(
+                    text = String.format("%.2f", manualParameters.focusDistance),
+                    color = LumaGold,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        ParameterRow(
+            label = "白平衡",
+            value = when (manualParameters.whiteBalanceMode) {
                 WhiteBalanceMode.MANUAL -> "${manualParameters.whiteBalanceKelvin}K"
                 else -> manualParameters.whiteBalanceMode.name
             },
@@ -729,38 +602,41 @@ ParameterRow(
                 onParametersChange(manualParameters.copy(whiteBalanceMode = mode))
             }
         )
-        
-        // 鎵嬪姩鐧藉钩琛¤壊娓╂粦鍧楋紙浠呭綋 MANUAL 妯″紡鏃舵樉绀猴級
+
         if (manualParameters.whiteBalanceMode == WhiteBalanceMode.MANUAL) {
             Spacer(modifier = Modifier.height(8.dp))
-            
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "鑹叉俯",
+                    text = "色温",
                     color = Color.White.copy(alpha = 0.7f),
                     fontSize = 12.sp
                 )
-                
+
                 Slider(
                     value = manualParameters.whiteBalanceKelvin.toFloat(),
                     onValueChange = { kelvin ->
-                        onParametersChange(manualParameters.copy(
-                            whiteBalanceKelvin = kelvin.toInt()
-                        ))
+                        onParametersChange(
+                            manualParameters.copy(
+                                whiteBalanceKelvin = kelvin.toInt()
+                            )
+                        )
                     },
                     valueRange = ManualParameters.WB_KELVIN_MIN.toFloat()..ManualParameters.WB_KELVIN_MAX.toFloat(),
-                    steps = 39, // 姣?00K涓€涓。
-                    modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
+                    steps = 39,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 16.dp),
                     colors = SliderDefaults.colors(
                         thumbColor = LumaGold,
                         activeTrackColor = LumaGold
                     )
                 )
-                
+
                 Text(
                     text = "${manualParameters.whiteBalanceKelvin}K",
                     color = LumaGold,
@@ -769,10 +645,9 @@ ParameterRow(
                 )
             }
         }
-        
+
         Spacer(modifier = Modifier.height(12.dp))
-        
-        // 鏇濆厜琛ュ伩
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly,
@@ -783,7 +658,7 @@ ParameterRow(
                 color = Color.White.copy(alpha = 0.7f),
                 fontSize = 12.sp
             )
-            
+
             Slider(
                 value = manualParameters.exposureCompensation ?: 0f,
                 onValueChange = { ev ->
@@ -791,25 +666,61 @@ ParameterRow(
                 },
                 valueRange = -3f..3f,
                 steps = 12,
-                modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 16.dp),
                 colors = SliderDefaults.colors(
                     thumbColor = LumaGold,
                     activeTrackColor = LumaGold
                 )
             )
-            
+
             Text(
-                text = "Camera permission required",
+                text = String.format("%+.1f", manualParameters.exposureCompensation),
                 color = LumaGold,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium
             )
         }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(
+                onClick = { onParametersChange(manualParameters.copy(isAeLocked = !manualParameters.isAeLocked)) },
+                modifier = Modifier
+                    .background(
+                        if (manualParameters.isAeLocked) LumaGold.copy(alpha = 0.2f) else Color.Transparent,
+                        RoundedCornerShape(12.dp)
+                    )
+            ) {
+                Text(
+                    text = if (manualParameters.isAeLocked) "AE锁定" else "AE解除",
+                    color = if (manualParameters.isAeLocked) LumaGold else Color.White
+                )
+            }
+
+            TextButton(
+                onClick = { onParametersChange(manualParameters.copy(isAfLocked = !manualParameters.isAfLocked)) },
+                modifier = Modifier
+                    .background(
+                        if (manualParameters.isAfLocked) LumaGold.copy(alpha = 0.2f) else Color.Transparent,
+                        RoundedCornerShape(12.dp)
+                    )
+            ) {
+                Text(
+                    text = if (manualParameters.isAfLocked) "AF锁定" else "AF解除",
+                    color = if (manualParameters.isAfLocked) LumaGold else Color.White
+                )
+            }
+        }
     }
 }
 
-/**
- * 鍙傛暟琛? */
 @Composable
 private fun ParameterRow(
     label: String,
@@ -818,7 +729,7 @@ private fun ParameterRow(
     onValueChange: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -829,7 +740,7 @@ private fun ParameterRow(
             color = Color.White.copy(alpha = 0.7f),
             fontSize = 12.sp
         )
-        
+
         Box {
             TextButton(onClick = { expanded = true }) {
                 Text(
@@ -839,7 +750,7 @@ private fun ParameterRow(
                     fontWeight = FontWeight.Medium
                 )
             }
-            
+
             DropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false }
@@ -858,9 +769,6 @@ private fun ParameterRow(
     }
 }
 
-/**
- * 鏉冮檺璇锋眰鐣岄潰
- */
 @Composable
 private fun PermissionRequestScreen(
     onRequestPermission: () -> Unit
@@ -882,23 +790,23 @@ private fun PermissionRequestScreen(
                 tint = LumaGold,
                 modifier = Modifier.size(80.dp)
             )
-            
+
             Text(
-                text = "Camera permission required",
+                text = "需要相机权限",
                 color = Color.White,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold
             )
-            
+
             Text(
-                text = "Luma Camera 闇€瑕佽闂偍鐨勭浉鏈烘墠鑳芥媿鎽勭収鐗囧拰瑙嗛",
+                text = "LumaCamera 需要访问相机和麦克风才能拍摄照片和实况视频。",
                 color = Color.White.copy(alpha = 0.7f),
                 fontSize = 16.sp,
                 textAlign = TextAlign.Center
             )
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             Button(
                 onClick = onRequestPermission,
                 colors = ButtonDefaults.buttonColors(
@@ -910,7 +818,7 @@ private fun PermissionRequestScreen(
                     .height(56.dp)
             ) {
                 Text(
-                    text = "鎺堜簣鏉冮檺",
+                    text = "授权权限",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -918,46 +826,3 @@ private fun PermissionRequestScreen(
         }
     }
 }
-
-/**
- * LUT 瀵煎叆鎸夐挳
- */
-@Composable
-private fun LutImportButton(
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .size(72.dp, 96.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color.White.copy(alpha = 0.1f))
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Add,
-                contentDescription = "瀵煎叆 LUT",
-                tint = Color.White,
-                modifier = Modifier.size(28.dp)
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "瀵煎叆",
-                color = Color.White,
-                fontSize = 11.sp,
-                textAlign = TextAlign.Center
-            )
-        }
-    }
-}
-
-
-
-
-
-
-

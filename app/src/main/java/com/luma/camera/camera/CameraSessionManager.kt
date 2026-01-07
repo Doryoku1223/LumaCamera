@@ -1,4 +1,4 @@
-﻿package com.luma.camera.camera
+package com.luma.camera.camera
 
 import android.graphics.ImageFormat
 import android.graphics.SurfaceTexture
@@ -27,11 +27,12 @@ import javax.inject.Singleton
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellableContinuation
+import kotlin.math.abs
 
 /**
  * Camera2 Session Manager
  * 
- * 绠＄悊 Camera2 浼氳瘽锛屾敮鎸?120fps 棰勮
+ * 管理 Camera2 会话，支�?120fps 预览
  */
 @Singleton
 class CameraSessionManager @Inject constructor(
@@ -43,49 +44,81 @@ class CameraSessionManager @Inject constructor(
     companion object {
         private const val TAG = "CameraSessionManager"
         
-        // 120fps 棰勮閰嶇疆
+        // 120fps 预览配置
         const val TARGET_PREVIEW_FPS = 120
         private const val MIN_PREVIEW_FPS = 60
         
-        // 棰勮灏哄 (16:9)
+        // 预览尺寸 (16:9)
         val PREVIEW_SIZE_4K = Size(3840, 2160)
         val PREVIEW_SIZE_1080P = Size(1920, 1080)
         val PREVIEW_SIZE_720P = Size(1280, 720)
     }
     
-    // 浼氳瘽鐘舵€?
+    // 会话状�?
 private val _sessionState = MutableStateFlow<SessionState>(SessionState.Closed)
     val sessionState: StateFlow<SessionState> = _sessionState.asStateFlow()
     
-    // 褰撳墠鐩告満璁惧
+    // 当前相机设备
     private var currentCamera: CameraDevice? = null
     private var currentSession: CameraCaptureSession? = null
     private var currentCameraId: String? = null
     
-    // 棰勮閰嶇疆
+    // 预览配置
     private var previewSurface: Surface? = null
     private var previewSize: Size = PREVIEW_SIZE_1080P
     private var recordingSurface: Surface? = null
     
-    // RAW 鎹曡幏
+    // RAW 捕获
     private var rawImageReader: ImageReader? = null
     private var jpegImageReader: ImageReader? = null
     
-    // 绾跨▼鍜?Handler
+    // 线程�?Handler
     private val cameraThread = HandlerThread("CameraThread").apply { start() }
     private val cameraHandler = Handler(cameraThread.looper)
     private val cameraExecutor = Executors.newSingleThreadExecutor()
     
-    // 棰勮璇锋眰
+    // 预览请求
     private var previewRequest: CaptureRequest? = null
     private var previewRequestBuilder: CaptureRequest.Builder? = null
     
-    // 鎵嬪姩鍙傛暟
+    // 手动参数
     private var manualParameters = ManualParameters()
     private val sessionMutex = Mutex()
+
+    /**
+     * ���ݵ�ǰ���κͻ�����ѡ����ʵ�Ԥ���ߴ�
+     */
+    fun selectPreviewSize(focalLength: FocalLength, aspectRatio: AspectRatio, targetRatioOverride: Float? = null): Size {
+        val cameraId = multiCameraManager.getCameraIdForFocalLength(focalLength) ?: currentCameraId
+        if (cameraId == null) {
+            return previewSize
+        }
+        val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+        val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            ?: return previewSize
+
+        val sizes = map.getOutputSizes(SurfaceTexture::class.java)
+            ?: return previewSize
+
+        val targetRatio = targetRatioOverride ?: if (aspectRatio == AspectRatio.RATIO_FULL) {
+            16f / 9f
+        } else {
+            aspectRatio.widthRatio.toFloat() / aspectRatio.heightRatio
+        }
+
+        val sortedSizes = sizes.sortedByDescending { it.width * it.height }
+        for (size in sortedSizes) {
+            val sizeRatio = size.width.toFloat() / size.height
+            if (abs(sizeRatio - targetRatio) < 0.1f) {
+                return size
+            }
+        }
+
+        return sortedSizes.firstOrNull() ?: previewSize
+    }
     
     /**
-     * 鎵撳紑鐩告満骞跺垱寤轰細璇?     */
+     * 打开相机并创建会�?     */
         @RequiresApi(Build.VERSION_CODES.P)
     suspend fun openCamera(
         focalLength: FocalLength,
@@ -115,7 +148,19 @@ private val _sessionState = MutableStateFlow<SessionState>(SessionState.Closed)
 
                 setupImageReaders(cameraId)
 
-                createHighFpsSession(device, previewSurface, recordingSurface)
+                try {
+                    createHighFpsSession(device, previewSurface, recordingSurface)
+                } catch (e: IllegalArgumentException) {
+                    Timber.w(e, "High FPS session failed, retrying without recording surface")
+                    createHighFpsSession(device, previewSurface, null)
+                } catch (e: Exception) {
+                    if (e.message?.contains("abandoned", ignoreCase = true) == true) {
+                        Timber.w(e, "High FPS session failed, retrying without recording surface")
+                        createHighFpsSession(device, previewSurface, null)
+                    } else {
+                        throw e
+                    }
+                }
 
                 _sessionState.value = SessionState.Ready
                 Result.success(Unit)
@@ -126,15 +171,16 @@ private val _sessionState = MutableStateFlow<SessionState>(SessionState.Closed)
         }
     }
     /**
-     * 鎵撳紑鐩告満璁惧
+     * 打开相机设备
      */
     @RequiresApi(Build.VERSION_CODES.P)
     private suspend fun openCameraDevice(cameraId: String): CameraDevice = 
         suspendCancellableCoroutine { continuation ->
+            val resumed = AtomicBoolean(false)
             try {
                 cameraManager.openCamera(cameraId, cameraExecutor, object : CameraDevice.StateCallback() {
                     override fun onOpened(camera: CameraDevice) {
-                        if (continuation.isActive) {
+                        if (continuation.isActive && resumed.compareAndSet(false, true)) {
                             continuation.resume(camera)
                         }
                     }
@@ -142,7 +188,7 @@ private val _sessionState = MutableStateFlow<SessionState>(SessionState.Closed)
                     override fun onDisconnected(camera: CameraDevice) {
                         camera.close()
                         _sessionState.value = SessionState.Closed
-                        if (continuation.isActive) {
+                        if (continuation.isActive && resumed.compareAndSet(false, true)) {
                             continuation.resumeWithException(CameraException("Camera disconnected"))
                         }
                     }
@@ -150,20 +196,20 @@ private val _sessionState = MutableStateFlow<SessionState>(SessionState.Closed)
                     override fun onError(camera: CameraDevice, error: Int) {
                         camera.close()
                         val errorMsg = getCameraErrorMessage(error)
-                        if (continuation.isActive) {
+                        if (continuation.isActive && resumed.compareAndSet(false, true)) {
                             continuation.resumeWithException(CameraException(errorMsg))
                         }
                     }
                 })
             } catch (e: SecurityException) {
-                if (continuation.isActive) {
+                if (continuation.isActive && resumed.compareAndSet(false, true)) {
                     continuation.resumeWithException(e)
                 }
             }
         }
     
     /**
-     * 鍒涘缓楂樺抚鐜囬瑙堜細璇?(120fps)
+     * 创建高帧率预览会�?(120fps)
      */
     @RequiresApi(Build.VERSION_CODES.P)
     private suspend fun createHighFpsSession(
@@ -171,23 +217,30 @@ private val _sessionState = MutableStateFlow<SessionState>(SessionState.Closed)
         previewSurface: Surface,
         recordingSurface: Surface? = null
     ) = suspendCancellableCoroutine { continuation ->
+        val resumed = AtomicBoolean(false)
         val cameraId = currentCameraId ?: run {
-            if (continuation.isActive) {
+            if (continuation.isActive && resumed.compareAndSet(false, true)) {
                 continuation.resumeWithException(CameraException("No camera ID"))
             }
             return@suspendCancellableCoroutine
         }
         val characteristics = cameraManager.getCameraCharacteristics(cameraId)
         
-        // 鑾峰彇鏀寔鐨勫抚鐜囪寖鍥?
+        // 获取支持的帧率范�?
 val fpsRanges = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
         val targetFpsRange = findBestFpsRange(fpsRanges ?: arrayOf())
         
-        // 閰嶇疆杈撳嚭
+        // 配置输出
         val outputs = mutableListOf<OutputConfiguration>()
         outputs.add(OutputConfiguration(previewSurface))
-        recordingSurface?.let { surface ->
-            outputs.add(OutputConfiguration(surface))
+        var recordingSurfaceAdded = false
+        recordingSurface?.takeIf { it.isValid }?.let { surface ->
+            try {
+                outputs.add(OutputConfiguration(surface))
+                recordingSurfaceAdded = true
+            } catch (e: IllegalArgumentException) {
+                Timber.w(e, "Skip abandoned recording surface")
+            }
         }
         
         rawImageReader?.surface?.let { surface ->
@@ -206,46 +259,48 @@ val fpsRanges = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_T
                 override fun onConfigured(session: CameraCaptureSession) {
                     currentSession = session
                     
-                    // 鍒涘缓棰勮璇锋眰
+                    // 创建预览请求
                     try {
                         previewRequestBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                             addTarget(previewSurface)
-                            recordingSurface?.let { surface ->
-                                addTarget(surface)
+                            if (recordingSurfaceAdded) {
+                                recordingSurface?.let { surface ->
+                                    addTarget(surface)
+                                }
                             }
                             
-                            // 璁剧疆鐩爣甯х巼
+                            // 设置目标帧率
                             set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, targetFpsRange)
                             
-                            // 浼樺寲棰勮寤惰繜
+                            // 优化预览延迟
                             set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
                             set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
                             
-                            // 寮€鍚?HDR+ (濡傛灉鏀寔)
+                            // 开�?HDR+ (如果支持)
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                                // Android 14+ HDR 鏀寔
+                                // Android 14+ HDR 支持
                             }
                         }
                         
                         previewRequest = previewRequestBuilder?.build()
                         
-                        // 寮€濮嬮瑙?
+                        // 开始预�?
 previewRequest?.let { request ->
                             session.setRepeatingRequest(request, captureCallback, cameraHandler)
                         }
                         
-                        if (continuation.isActive) {
+                        if (continuation.isActive && resumed.compareAndSet(false, true)) {
                             continuation.resume(Unit)
                         }
                     } catch (e: Exception) {
-                        if (continuation.isActive) {
+                        if (continuation.isActive && resumed.compareAndSet(false, true)) {
                             continuation.resumeWithException(e)
                         }
                     }
                 }
                 
                 override fun onConfigureFailed(session: CameraCaptureSession) {
-                    if (continuation.isActive) {
+                    if (continuation.isActive && resumed.compareAndSet(false, true)) {
                         continuation.resumeWithException(
                             CameraException("Failed to configure camera session")
                         )
@@ -258,12 +313,12 @@ previewRequest?.let { request ->
     }
     
     /**
-     * 璁剧疆鍥惧儚璇诲彇鍣?     */
+     * 设置图像读取�?     */
     private fun setupImageReaders(cameraId: String) {
         val characteristics = cameraManager.getCameraCharacteristics(cameraId)
         val streamMap = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
         
-        // RAW 鎹曡幏
+        // RAW 捕获
         if (streamMap?.outputFormats?.contains(ImageFormat.RAW_SENSOR) == true) {
             val rawSizes = streamMap.getOutputSizes(ImageFormat.RAW_SENSOR)
             val rawSize = rawSizes?.maxByOrNull { it.width * it.height }
@@ -280,7 +335,7 @@ previewRequest?.let { request ->
             }
         }
         
-        // JPEG 鎹曡幏
+        // JPEG 捕获
         val jpegSizes = streamMap?.getOutputSizes(ImageFormat.JPEG)
         val jpegSize = jpegSizes?.maxByOrNull { it.width * it.height }
         
@@ -294,23 +349,24 @@ previewRequest?.let { request ->
                 setOnImageAvailableListener(jpegImageListener, cameraHandler)
             }
         }
+
     }
-    
+
     /**
-     * 鏌ユ壘鏈€浣冲抚鐜囪寖鍥?     */
+     * 查找最佳帧率范�?     */
     private fun findBestFpsRange(ranges: Array<Range<Int>>): Range<Int> {
-        // 浼樺厛閫夋嫨 120fps
+        // 优先选择 120fps
         ranges.find { it.upper == TARGET_PREVIEW_FPS }?.let { return it }
         
-        // 鍏舵 60fps
+        // 其次 60fps
         ranges.find { it.upper >= MIN_PREVIEW_FPS }?.let { return it }
         
-        // 榛樿鏈€楂樺抚鐜?
+        // 默认最高帧�?
 return ranges.maxByOrNull { it.upper } ?: Range(30, 30)
     }
     
     /**
-     * 鏇存柊鎵嬪姩鍙傛暟
+     * 更新手动参数
      */
     suspend fun updateManualParameters(params: ManualParameters) {
         this.manualParameters = params
@@ -324,7 +380,7 @@ return ranges.maxByOrNull { it.upper } ?: Range(30, 30)
     }
     
     /**
-     * 搴旂敤鎵嬪姩鍙傛暟
+     * 应用手动参数
      */
     private fun applyManualParameters(builder: CaptureRequest.Builder, params: ManualParameters) {
         // ISO
@@ -333,37 +389,37 @@ return ranges.maxByOrNull { it.upper } ?: Range(30, 30)
             builder.set(CaptureRequest.SENSOR_SENSITIVITY, iso)
         }
         
-        // 蹇棬閫熷害
+        // 快门速度
         params.shutterSpeed?.let { speed ->
             builder.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_OFF)
-            // 杞崲涓虹撼绉?
+            // 转换为纳�?
 val exposureNs = (1_000_000_000L / speed).toLong()
             builder.set(CaptureRequest.SENSOR_EXPOSURE_TIME, exposureNs)
         }
         
-        // 鎵嬪姩瀵圭劍璺濈
+        // 手动对焦距离
         params.focusDistance?.let { distance ->
             builder.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF)
             builder.set(CaptureRequest.LENS_FOCUS_DISTANCE, distance)
         }
         
-        // 鐧藉钩琛?
+        // 白平�?
 when (params.whiteBalanceMode) {
             WhiteBalanceMode.AUTO -> {
                 builder.set(CaptureRequest.CONTROL_AWB_MODE, CameraMetadata.CONTROL_AWB_MODE_AUTO)
             }
             WhiteBalanceMode.MANUAL -> {
-                // 鎵嬪姩鑹叉俯闇€瑕佸叧闂?AWB
+                // 手动色温需要关�?AWB
                 builder.set(CaptureRequest.CONTROL_AWB_MODE, CameraMetadata.CONTROL_AWB_MODE_OFF)
                 builder.set(CaptureRequest.COLOR_CORRECTION_MODE, CameraMetadata.COLOR_CORRECTION_MODE_TRANSFORM_MATRIX)
                 
-                // 鏍规嵁鑹叉俯璁＄畻 RGB 澧炵泭
+                // 根据色温计算 RGB 增益
                 val gains = calculateColorGainsFromKelvin(params.whiteBalanceKelvin)
                 builder.set(CaptureRequest.COLOR_CORRECTION_GAINS, gains)
                 Timber.d("Applied manual white balance: ${params.whiteBalanceKelvin}K -> gains=${gains}")
             }
             else -> {
-                // 棰勮鐧藉钩琛?
+                // 预设白平�?
 val awbMode = when (params.whiteBalanceMode) {
                     WhiteBalanceMode.DAYLIGHT -> CameraMetadata.CONTROL_AWB_MODE_DAYLIGHT
                     WhiteBalanceMode.CLOUDY -> CameraMetadata.CONTROL_AWB_MODE_CLOUDY_DAYLIGHT
@@ -376,11 +432,11 @@ val awbMode = when (params.whiteBalanceMode) {
             }
         }
         
-        // 鏇濆厜琛ュ伩 (Auto 妯″紡涓?
+        // 曝光补偿 (Auto 模式�?
         if (params.iso == null && params.shutterSpeed == null) {
             builder.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON)
             
-            // 搴旂敤鏇濆厜琛ュ伩锛堝鏋滀笉涓?0锛?
+            // 应用曝光补偿（如果不�?0�?
 if (params.exposureCompensation != 0f) {
                 val cameraId = currentCameraId
                 if (cameraId != null) {
@@ -389,7 +445,7 @@ if (params.exposureCompensation != 0f) {
                     val step = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_STEP)
                     
                     if (range != null && step != null) {
-                        // EV 鍊奸櫎浠ユ闀匡紝寰楀埌琛ュ伩姝ユ暟
+                        // EV 值除以步长，得到补偿步数
                         val compensation = (params.exposureCompensation / step.toFloat()).toInt()
                             .coerceIn(range.lower, range.upper)
                         builder.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, compensation)
@@ -397,68 +453,92 @@ if (params.exposureCompensation != 0f) {
                     }
                 }
             } else {
-                // 閲嶇疆涓?0
+                // 重置�?0
                 builder.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, 0)
             }
         }
+        if (params.isAeLocked) {
+            builder.set(CaptureRequest.CONTROL_AE_LOCK, true)
+        } else {
+            builder.set(CaptureRequest.CONTROL_AE_LOCK, false)
+        }
+
+        if (params.isAfLocked && params.focusDistance == null) {
+            builder.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF)
+        }
+
     }
     
     /**
-     * 瑙︽懜瀵圭劍
+     * 触摸对焦
      */
     suspend fun triggerTouchFocus(x: Float, y: Float, viewWidth: Int, viewHeight: Int) {
         val builder = previewRequestBuilder ?: return
         val cameraId = currentCameraId ?: return
+        val session = currentSession ?: return
         val characteristics = cameraManager.getCameraCharacteristics(cameraId)
-        
-        // 璁＄畻瀵圭劍鍖哄煙
+
         val sensorRect = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE) ?: return
-        
+        val maxAfRegions = characteristics.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AF) ?: 0
+        val maxAeRegions = characteristics.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AE) ?: 0
+        val availableAfModes = characteristics.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES) ?: intArrayOf()
+
         val focusSize = 150
         val centerX = (x / viewWidth * sensorRect.width()).toInt()
         val centerY = (y / viewHeight * sensorRect.height()).toInt()
-        
+
         val left = (centerX - focusSize / 2).coerceIn(0, sensorRect.width() - focusSize)
         val top = (centerY - focusSize / 2).coerceIn(0, sensorRect.height() - focusSize)
         val right = left + focusSize
         val bottom = top + focusSize
-        
-        val focusRegion = android.hardware.camera2.params.MeteringRectangle(
-            left, top, right - left, bottom - top, MeteringRectangle.METERING_WEIGHT_MAX
-        )
-        
-        // 璁剧疆瀵圭劍鍜屾祴鍏夊尯鍩?
-builder.set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(focusRegion))
-        builder.set(CaptureRequest.CONTROL_AE_REGIONS, arrayOf(focusRegion))
-        builder.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_AUTO)
+
+        if (maxAfRegions > 0 || maxAeRegions > 0) {
+            val focusRegion = android.hardware.camera2.params.MeteringRectangle(
+                left, top, right - left, bottom - top, MeteringRectangle.METERING_WEIGHT_MAX
+            )
+            if (maxAfRegions > 0) {
+                builder.set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(focusRegion))
+            }
+            if (maxAeRegions > 0) {
+                builder.set(CaptureRequest.CONTROL_AE_REGIONS, arrayOf(focusRegion))
+            }
+        }
+
+        val afMode = when {
+            availableAfModes.contains(CameraMetadata.CONTROL_AF_MODE_AUTO) -> CameraMetadata.CONTROL_AF_MODE_AUTO
+            availableAfModes.contains(CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_PICTURE) -> CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_PICTURE
+            else -> CameraMetadata.CONTROL_AF_MODE_OFF
+        }
+        builder.set(CaptureRequest.CONTROL_AF_MODE, afMode)
         builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_START)
-        
-        // 鍙戦€佸崟娆¤姹傝Е鍙戝鐒?
-val focusRequest = builder.build()
-        currentSession?.capture(focusRequest, captureCallback, cameraHandler)
-        
-        // 閲嶇疆 trigger
+
+        val focusRequest = builder.build()
+        session.capture(focusRequest, captureCallback, cameraHandler)
+
         builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_IDLE)
+        if (availableAfModes.contains(CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_PICTURE)) {
+            builder.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+        }
         previewRequest = builder.build()
-        currentSession?.setRepeatingRequest(previewRequest!!, captureCallback, cameraHandler)
+        session.setRepeatingRequest(previewRequest!!, captureCallback, cameraHandler)
     }
-    
+
     /**
-     * 鍒囨崲鐒︽
+     * 切换焦段
      */
     @RequiresApi(Build.VERSION_CODES.P)
     suspend fun switchFocalLength(focalLength: FocalLength): Result<Unit> {
         val surface = previewSurface ?: return Result.failure(CameraException("No preview surface"))
         
-        // 鍏抽棴褰撳墠鐩告満
+        // 关闭当前相机
         closeCamera()
         
-        // 鎵撳紑鏂扮劍娈电浉鏈?
+        // 打开新焦段相�?
 return openCamera(focalLength, surface, previewSize, recordingSurface)
     }
     
     /**
-     * 璁剧疆闂厜鐏ā寮?     */
+     * 设置闪光灯模�?     */
     fun setFlashMode(mode: FlashMode) {
         previewRequestBuilder?.let { builder ->
             when (mode) {
@@ -485,8 +565,8 @@ return openCamera(focalLength, surface, previewSize, recordingSurface)
     }
     
     /**
-     * 鎷嶇収
-     * @param flashMode 闂厜鐏ā寮?     * @return JPEG 鍥惧儚鏁版嵁
+     * 拍照
+     * @param flashMode 闪光灯模�?     * @return JPEG 图像数据
      */
     suspend fun capturePhoto(flashMode: FlashMode = FlashMode.OFF): ByteArray = suspendCancellableCoroutine { continuation ->
         val resumed = AtomicBoolean(false)
@@ -510,7 +590,7 @@ return openCamera(focalLength, surface, previewSize, recordingSurface)
             return@suspendCancellableCoroutine
         }
 
-        // 璁剧疆鍥惧儚鍙敤鍥炶皟
+        // 设置图像可用回调
         reader.setOnImageAvailableListener({ imageReader ->
             val image = imageReader.acquireLatestImage()
             if (image != null) {
@@ -527,15 +607,15 @@ return openCamera(focalLength, surface, previewSize, recordingSurface)
             }
         }, cameraHandler)
 
-        // 鍒涘缓鎷嶇収璇锋眰
+        // 创建拍照请求
         try {
-            // 鑾峰彇鐩告満浼犳劅鍣ㄦ柟鍚?
+            // 获取相机传感器方�?
 val cameraId = currentCameraId ?: "0"
             val characteristics = cameraManager.getCameraCharacteristics(cameraId)
             val sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
             val facing = characteristics.get(CameraCharacteristics.LENS_FACING) ?: CameraCharacteristics.LENS_FACING_BACK
             
-            // 鑾峰彇璁惧褰撳墠鐗╃悊鏂瑰悜
+            // 获取设备当前物理方向
             val deviceOrientation = sensorInfoManager.orientation.value
             val deviceRotation = when (deviceOrientation) {
                 SensorInfoManager.DeviceOrientation.PORTRAIT -> 0
@@ -544,9 +624,9 @@ val cameraId = currentCameraId ?: "0"
                 SensorInfoManager.DeviceOrientation.LANDSCAPE_RIGHT -> 270
             }
             
-            // 璁＄畻 JPEG 鏂瑰悜
-            // 鍏紡锛?sensorOrientation + deviceRotation) % 360 瀵逛簬鍚庣疆鐩告満
-            // 瀵逛簬鍓嶇疆鐩告満闇€瑕侀暅鍍忓鐞?
+            // 计算 JPEG 方向
+            // 公式�?sensorOrientation + deviceRotation) % 360 对于后置相机
+            // 对于前置相机需要镜像处�?
 val jpegOrientation = if (facing == CameraCharacteristics.LENS_FACING_FRONT) {
                 (sensorOrientation - deviceRotation + 360) % 360
             } else {
@@ -555,15 +635,15 @@ val jpegOrientation = if (facing == CameraCharacteristics.LENS_FACING_FRONT) {
             
             Timber.d("Orientation calculation: sensor=$sensorOrientation, device=$deviceRotation, facing=$facing, jpeg=$jpegOrientation")
             
-            // 妫€鏌ユ槸鍚﹂渶瑕?AE precapture (鐢ㄤ簬 AUTO 鍜?ON 闂厜鐏ā寮?
+            // 检查是否需�?AE precapture (用于 AUTO �?ON 闪光灯模�?
             val needsPrecapture = (flashMode == FlashMode.AUTO || flashMode == FlashMode.ON) &&
                     manualParameters.iso == null && manualParameters.shutterSpeed == null
             
             if (needsPrecapture) {
-                // 瑙﹀彂 AE precapture 搴忓垪
+                // 触发 AE precapture 序列
                 runAePrecaptureSequence(session, camera, reader, flashMode, jpegOrientation, resumed, continuation)
             } else {
-                // 鐩存帴鎷嶇収
+                // 直接拍照
                 captureStillPicture(session, camera, reader, flashMode, jpegOrientation, resumed, continuation)
             }
         } catch (e: CameraAccessException) {
@@ -574,7 +654,7 @@ val jpegOrientation = if (facing == CameraCharacteristics.LENS_FACING_FRONT) {
     }
     
     /**
-     * 杩愯 AE 棰勬崟鑾峰簭鍒楋紙鐢ㄤ簬闂厜鐏祴鍏夛級
+     * 运行 AE 预捕获序列（用于闪光灯测光）
      */
     private fun runAePrecaptureSequence(
         session: CameraCaptureSession,
@@ -587,7 +667,7 @@ val jpegOrientation = if (facing == CameraCharacteristics.LENS_FACING_FRONT) {
     ) {
         try {
             previewRequestBuilder?.let { builder ->
-                // 璁剧疆闂厜鐏ā寮?
+                // 设置闪光灯模�?
 when (flashMode) {
                     FlashMode.AUTO -> {
                         builder.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON_AUTO_FLASH)
@@ -598,7 +678,7 @@ when (flashMode) {
                     else -> {}
                 }
                 
-                // 瑙﹀彂 AE precapture
+                // 触发 AE precapture
                 builder.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER, CameraMetadata.CONTROL_AE_PRECAPTURE_TRIGGER_START)
                 
                 session.capture(builder.build(), object : CameraCaptureSession.CaptureCallback() {
@@ -608,10 +688,10 @@ when (flashMode) {
                         result: TotalCaptureResult
                     ) {
                         Timber.d("AE precapture started")
-                        // 閲嶇疆 precapture trigger
+                        // 重置 precapture trigger
                         builder.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER, CameraMetadata.CONTROL_AE_PRECAPTURE_TRIGGER_IDLE)
                         
-                        // 绛夊緟 AE 鏀舵暃鍚庢媿鐓?
+                        // 等待 AE 收敛后拍�?
 waitForAeConvergenceAndCapture(session, camera, reader, flashMode, jpegOrientation, resumed, continuation)
                     }
                     
@@ -625,7 +705,7 @@ waitForAeConvergenceAndCapture(session, camera, reader, flashMode, jpegOrientati
                     }
                 }, cameraHandler)
             } ?: run {
-                // 濡傛灉娌℃湁
+                // 如果没有
 // No previewRequestBuilder, capture directly
 captureStillPicture(session, camera, reader, flashMode, jpegOrientation, resumed, continuation)
             }
@@ -638,7 +718,7 @@ captureStillPicture(session, camera, reader, flashMode, jpegOrientation, resumed
     }
     
     /**
-     * 绛夊緟 AE 鏀舵暃鍚庢媿鐓?     */
+     * 等待 AE 收敛后拍�?     */
     private fun waitForAeConvergenceAndCapture(
         session: CameraCaptureSession,
         camera: CameraDevice,
@@ -649,7 +729,7 @@ captureStillPicture(session, camera, reader, flashMode, jpegOrientation, resumed
         continuation: CancellableContinuation<ByteArray>
     ) {
         var waitCount = 0
-        val maxWaitCount = 5 // 鏈€澶氱瓑寰?甯?        
+        val maxWaitCount = 5 // 最多等�?�?        
         previewRequestBuilder?.let { builder ->
             try {
                 session.setRepeatingRequest(builder.build(), object : CameraCaptureSession.CaptureCallback() {
@@ -663,28 +743,28 @@ captureStillPicture(session, camera, reader, flashMode, jpegOrientation, resumed
                         
                         Timber.d("Waiting for AE convergence: state=$aeState, count=$waitCount")
                         
-                        // 妫€鏌?AE 鏄惁鏀舵暃鎴栧凡鍑嗗濂介棯鍏?
+                        // 检�?AE 是否收敛或已准备好闪�?
 val isAeReady = aeState == null ||
                                 aeState == CameraMetadata.CONTROL_AE_STATE_CONVERGED ||
                                 aeState == CameraMetadata.CONTROL_AE_STATE_FLASH_REQUIRED ||
                                 waitCount >= maxWaitCount
                         
                         if (isAeReady) {
-                            // 鍋滄閲嶅璇锋眰鐨勫洖璋冪洃鍚紝鎭㈠姝ｅ父棰勮
+                            // 停止重复请求的回调监听，恢复正常预览
                             try {
                                 session.setRepeatingRequest(builder.build(), captureCallback, cameraHandler)
                             } catch (e: CameraAccessException) {
                                 Timber.e(e, "Failed to restore preview")
                             }
                             
-                            // 鎵ц鎷嶇収
+                            // 执行拍照
                             captureStillPicture(session, camera, reader, flashMode, jpegOrientation, resumed, continuation)
                         }
                     }
                 }, cameraHandler)
             } catch (e: CameraAccessException) {
                 Timber.e(e, "Failed to wait for AE convergence")
-                // 鍗充娇澶辫触涔熷皾璇曟媿鐓?
+                // 即使失败也尝试拍�?
 captureStillPicture(session, camera, reader, flashMode, jpegOrientation, resumed, continuation)
             }
         } ?: run {
@@ -693,7 +773,7 @@ captureStillPicture(session, camera, reader, flashMode, jpegOrientation, resumed
     }
     
     /**
-     * 鎵ц瀹為檯鐨勯潤鎬佸浘鐗囨崟鑾?     */
+     * 执行实际的静态图片捕�?     */
     private fun captureStillPicture(
         session: CameraCaptureSession,
         camera: CameraDevice,
@@ -707,10 +787,10 @@ captureStillPicture(session, camera, reader, flashMode, jpegOrientation, resumed
             val captureBuilder = camera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
                 addTarget(reader.surface)
                 
-                // 璁剧疆 JPEG 鏂瑰悜 - 淇鐓х墖鏃嬭浆闂
+                // 设置 JPEG 方向 - 修复照片旋转问题
                 set(CaptureRequest.JPEG_ORIENTATION, jpegOrientation)
                 
-                // 闂厜鐏缃?
+                // 闪光灯设�?
 when (flashMode) {
                     FlashMode.OFF -> {
                         set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
@@ -723,13 +803,13 @@ when (flashMode) {
                         set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON_ALWAYS_FLASH)
                     }
                     FlashMode.TORCH -> {
-                        // TORCH 妯″紡锛氫繚鎸佹墜鐢电瓛甯镐寒
+                        // TORCH 模式：保持手电筒常亮
                         set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
                         set(CaptureRequest.FLASH_MODE, CaptureRequest.FLASH_MODE_TORCH)
                     }
                 }
                 
-                // 搴旂敤鎵嬪姩鍙傛暟
+                // 应用手动参数
                 if (manualParameters.iso != null || manualParameters.shutterSpeed != null) {
                     set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_OFF)
                     set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
@@ -739,17 +819,17 @@ when (flashMode) {
                         set(CaptureRequest.SENSOR_SENSITIVITY, iso)
                     }
                     
-                    // 蹇棬閫熷害 (杞崲涓虹撼绉?
+                    // 快门速度 (转换为纳�?
                     manualParameters.shutterSpeed?.let { speed ->
                         val exposureTimeNs = (1_000_000_000L / speed).toLong()
                         set(CaptureRequest.SENSOR_EXPOSURE_TIME, exposureTimeNs)
                     }
                 }
                 
-                // 璁剧疆 JPEG 璐ㄩ噺
+                // 设置 JPEG 质量
                 set(CaptureRequest.JPEG_QUALITY, 95.toByte())
                 
-                // 璁剧疆鑷姩瀵圭劍
+                // 设置自动对焦
                 if (manualParameters.focusDistance == null) {
                     set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
                 } else {
@@ -791,7 +871,7 @@ when (flashMode) {
     }
     
     /**
-     * RAW 鎹曡幏缁撴灉
+     * RAW 捕获结果
      */
     data class RawCaptureResult(
         val rawImage: android.media.Image,
@@ -801,7 +881,7 @@ when (flashMode) {
     )
     
     /**
-     * 妫€鏌ュ綋鍓嶇浉鏈烘槸鍚︽敮鎸?RAW 鎹曡幏
+     * 检查当前相机是否支�?RAW 捕获
      */
     fun isRawCaptureSupported(): Boolean {
         val cameraId = currentCameraId ?: return false
@@ -817,8 +897,8 @@ when (flashMode) {
     }
     
     /**
-     * 鎹曡幏 RAW 鐓х墖锛堢敤浜?LumaLog 鐪?RAW 鏍煎紡锛?     * 
-     * @param flashMode 闂厜鐏ā寮?     * @return RawCaptureResult 鍖呭惈 RAW Image銆佺浉鏈虹壒鎬у拰鎹曡幏缁撴灉
+     * 捕获 RAW 照片（用�?LumaLog �?RAW 格式�?     * 
+     * @param flashMode 闪光灯模�?     * @return RawCaptureResult 包含 RAW Image、相机特性和捕获结果
      */
     suspend fun captureRawPhoto(flashMode: FlashMode = FlashMode.OFF): RawCaptureResult = suspendCancellableCoroutine { continuation ->
         val resumed = AtomicBoolean(false)
@@ -846,7 +926,7 @@ when (flashMode) {
         val characteristics = cameraManager.getCameraCharacteristics(cameraId)
         
         try {
-            // 璁＄畻鍥惧儚鏂瑰悜
+            // 计算图像方向
             val sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
             val facing = characteristics.get(CameraCharacteristics.LENS_FACING) ?: CameraCharacteristics.LENS_FACING_BACK
             val deviceOrientation = sensorInfoManager.orientation.value
@@ -863,14 +943,14 @@ when (flashMode) {
                 (sensorOrientation + deviceRotation) % 360
             }
             
-            // 鍒涘缓 RAW 鎹曡幏璇锋眰
+            // 创建 RAW 捕获请求
             val captureBuilder = camera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
                 addTarget(rawReader.surface)
                 
-                // 搴旂敤褰撳墠鎵嬪姩鍙傛暟
+                // 应用当前手动参数
                 applyManualParameters(this, manualParameters)
                 
-                // 璁剧疆闂厜鐏?
+                // 设置闪光�?
 when (flashMode) {
                     FlashMode.OFF -> {
                         set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON)
@@ -889,21 +969,21 @@ when (flashMode) {
                 }
             }
             
-            // 璁剧疆 RAW 鍥惧儚鐩戝惉鍣?
+            // 设置 RAW 图像监听�?
 rawReader.setOnImageAvailableListener({ imageReader ->
                 val image = imageReader.acquireLatestImage()
                 if (image != null) {
-                    // 娉ㄦ剰锛氳皟鐢ㄨ€呴渶瑕佽礋璐ｅ叧闂?Image
+                    // 注意：调用者需要负责关�?Image
                     if (resumed.compareAndSet(false, true) && continuation.isActive) {
-                        // 闇€瑕佽幏鍙栧搴旂殑 captureResult
-                        // 鐢变簬 RAW 鎹曡幏鐨勭粨鏋滃湪 onCaptureCompleted 涓紝
-                        // 杩欓噷鏆傛椂杩斿洖 null 鐨?captureResult锛屽悗闈細鍦?callback 涓洿鏂?
+                        // 需要获取对应的 captureResult
+                        // 由于 RAW 捕获的结果在 onCaptureCompleted 中，
+                        // 这里暂时返回 null �?captureResult，后面会�?callback 中更�?
 Timber.w("RAW image available, but waiting for capture result")
                     }
                 }
             }, cameraHandler)
             
-            // 鎵ц鎹曡幏
+            // 执行捕获
             session.capture(captureBuilder.build(), object : CameraCaptureSession.CaptureCallback() {
                 override fun onCaptureCompleted(
                     session: CameraCaptureSession,
@@ -912,7 +992,7 @@ Timber.w("RAW image available, but waiting for capture result")
                 ) {
                     Timber.d("RAW capture completed")
                     
-                    // 鑾峰彇 RAW 鍥惧儚
+                    // 获取 RAW 图像
                     val rawImage = rawReader.acquireLatestImage()
                     if (rawImage != null) {
                         if (resumed.compareAndSet(false, true) && continuation.isActive) {
@@ -953,27 +1033,27 @@ Timber.w("RAW image available, but waiting for capture result")
     }
 
     /**
-     * 鍏抽棴鐩告満
+     * 关闭相机
      */
     fun closeCamera() {
         Timber.d("Closing camera session...")
         
-        // 瀹夊叏鍦板仠姝㈤噸澶嶈姹傦紙蹇界暐閿欒锛屽洜涓轰細璇濆彲鑳藉凡澶辨晥锛?
+        // 安全地停止重复请求（忽略错误，因为会话可能已失效�?
 try {
             currentSession?.stopRepeating()
         } catch (e: Exception) {
-            // 蹇界暐 stopRepeating 閿欒 - 浼氳瘽鍙兘宸茬粡澶辨晥
+            // 忽略 stopRepeating 错误 - 会话可能已经失效
             Timber.d("stopRepeating skipped (session may be invalid): ${e.message}")
         }
         
-        // 瀹夊叏鍦颁腑姝㈡墍鏈夎姹?
+        // 安全地中止所有请�?
 try {
             currentSession?.abortCaptures()
         } catch (e: Exception) {
             Timber.d("abortCaptures skipped: ${e.message}")
         }
         
-        // 鍏抽棴浼氳瘽鍜岃澶?
+        // 关闭会话和设�?
 try {
             currentSession?.close()
         } catch (e: Exception) {
@@ -994,7 +1074,7 @@ try {
         jpegImageReader?.close()
         jpegImageReader = null
         
-        // 娓呯悊棰勮 Surface 寮曠敤锛堜笉瑕侀噴鏀惧畠锛屽畠鐢?TextureView 绠＄悊锛?        previewSurface = null
+        // 清理预览 Surface 引用（不要释放它，它�?TextureView 管理�?        previewSurface = null
         recordingSurface = null
         
         previewRequest = null
@@ -1005,7 +1085,7 @@ try {
     }
     
     /**
-     * 閲婃斁璧勬簮
+     * 释放资源
      */
     fun release() {
         closeCamera()
@@ -1013,35 +1093,35 @@ try {
         cameraExecutor.shutdown()
     }
     
-    // 鎹曡幏鍥炶皟
+    // 捕获回调
     private val captureCallback = object : CameraCaptureSession.CaptureCallback() {
         override fun onCaptureCompleted(
             session: CameraCaptureSession,
             request: CaptureRequest,
             result: TotalCaptureResult
         ) {
-            // 鍙互鍦ㄨ繖閲岃幏鍙?AF/AE 鐘舵€?
+            // 可以在这里获�?AF/AE 状�?
 val afState: Int? = result.get(android.hardware.camera2.CaptureResult.CONTROL_AF_STATE)
             val aeState: Int? = result.get(android.hardware.camera2.CaptureResult.CONTROL_AE_STATE)
         }
     }
     
-    // RAW 鍥惧儚鐩戝惉鍣?
+    // RAW 图像监听�?
 private val rawImageListener = ImageReader.OnImageAvailableListener { reader ->
         val image = reader.acquireLatestImage()
         image?.let {
-            // 鍙戦€佸埌 Luma Imaging Engine 澶勭悊
-            // TODO: 浼犻€掔粰 captureCallback
+            // 发送到 Luma Imaging Engine 处理
+            // TODO: 传递给 captureCallback
             it.close()
         }
     }
     
-    // JPEG 鍥惧儚鐩戝惉鍣?
+    // JPEG 图像监听�?
 private val jpegImageListener = ImageReader.OnImageAvailableListener { reader ->
         val image = reader.acquireLatestImage()
         image?.let {
-            // 淇濆瓨 JPEG
-            // TODO: 浼犻€掔粰瀛樺偍妯″潡
+            // 保存 JPEG
+            // TODO: 传递给存储模块
             it.close()
         }
     }
@@ -1056,9 +1136,9 @@ private val jpegImageListener = ImageReader.OnImageAvailableListener { reader ->
     }
     
     /**
-     * 鏍规嵁鑹叉俯锛堝紑灏旀枃锛夎绠?RGB 棰滆壊澧炵泭
-     * 浣跨敤 Tanner Helland 鐨勭畻娉曞皢鑹叉俯杞崲涓?RGB
-     * 鍙傝€? https://tannerhelland.com/2012/09/18/convert-temperature-rgb-algorithm-code.html
+     * 根据色温（开尔文）计�?RGB 颜色增益
+     * 使用 Tanner Helland 的算法将色温转换�?RGB
+     * 参�? https://tannerhelland.com/2012/09/18/convert-temperature-rgb-algorithm-code.html
      */
     private fun calculateColorGainsFromKelvin(kelvin: Int): android.hardware.camera2.params.RggbChannelVector {
         val temp = (kelvin / 100.0).coerceIn(10.0, 400.0)
@@ -1067,7 +1147,7 @@ private val jpegImageListener = ImageReader.OnImageAvailableListener { reader ->
         val g: Double
         val b: Double
         
-        // 璁＄畻绾㈣壊
+        // 计算红色
         r = if (temp <= 66) {
             1.0
         } else {
@@ -1075,7 +1155,7 @@ private val jpegImageListener = ImageReader.OnImageAvailableListener { reader ->
             1.292936186 * Math.pow(x, -0.1332047592)
         }.coerceIn(0.0, 1.0)
         
-        // 璁＄畻缁胯壊
+        // 计算绿色
         g = if (temp <= 66) {
             val x = temp
             0.39008157876902 * Math.log(x) - 0.63184144378622
@@ -1084,7 +1164,7 @@ private val jpegImageListener = ImageReader.OnImageAvailableListener { reader ->
             1.129890861 * Math.pow(x, -0.0755148492)
         }.coerceIn(0.0, 1.0)
         
-        // 璁＄畻钃濊壊
+        // 计算蓝色
         b = if (temp >= 66) {
             1.0
         } else if (temp <= 19) {
@@ -1094,14 +1174,14 @@ private val jpegImageListener = ImageReader.OnImageAvailableListener { reader ->
             0.543206789 * Math.log(x) - 1.19625408914
         }.coerceIn(0.0, 1.0)
         
-        // 灏?RGB 杞崲涓虹浉鏈哄鐩?        // 澧炵泭瓒婇珮 = 棰滆壊瓒婂己
-        // 鎴戜滑闇€瑕佸弽杞細浣庤壊娓╋紙鏆栬壊锛夊簲璇ュ噺灏戣摑鑹层€佸鍔犵孩鑹?
+        // �?RGB 转换为相机增�?        // 增益越高 = 颜色越强
+        // 我们需要反转：低色温（暖色）应该减少蓝色、增加红�?
 val baseGain = 1.0f
         val redGain = (baseGain / r).toFloat().coerceIn(0.5f, 4.0f)
         val blueGain = (baseGain / b).toFloat().coerceIn(0.5f, 4.0f)
         val greenGain = baseGain / g.toFloat().coerceIn(0.5f, 4.0f)
         
-        // RGGB 鏍煎紡锛歊ed, Green(even), Green(odd), Blue
+        // RGGB 格式：Red, Green(even), Green(odd), Blue
         return android.hardware.camera2.params.RggbChannelVector(
             redGain,
             greenGain,
@@ -1111,8 +1191,9 @@ val baseGain = 1.0f
     }
 }
 
+
 /**
- * 浼氳瘽鐘舵€? */
+ * 会话状�? */
 sealed class SessionState {
     object Closed : SessionState()
     object Opening : SessionState()
@@ -1121,13 +1202,15 @@ sealed class SessionState {
 }
 
 /**
- * 鐩告満寮傚父
+ * 相机异常
  */
 class CameraException(message: String) : Exception(message)
 
 /**
- * 娴嬪厜鐭╁舰瀵煎叆
+ * 测光矩形导入
  */
 typealias MeteringRectangle = android.hardware.camera2.params.MeteringRectangle
+
+
 
 

@@ -213,9 +213,9 @@ class GpuLutRenderer @Inject constructor() {
 
     /**
      * 应用 LUT 到图像
-     */
+    */
     fun apply(input: Bitmap, lutId: String, intensity: Float): Bitmap {
-        val lutTextureId = lutTextures[lutId] ?: return input
+        val lutTextureId = lutTextures[lutId] ?: return input.copy(Bitmap.Config.ARGB_8888, true)
 
         // 简化实现：使用 CPU 进行 LUT 映射
         // 实际应该在 OpenGL 线程中使用 GPU 渲染

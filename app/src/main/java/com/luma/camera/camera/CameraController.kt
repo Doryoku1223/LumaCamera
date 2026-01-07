@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.luma.camera.camera
 
 import android.annotation.SuppressLint

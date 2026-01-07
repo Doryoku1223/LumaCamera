@@ -1,4 +1,4 @@
-﻿package com.luma.camera.presentation.viewmodel
+package com.luma.camera.presentation.viewmodel
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -59,7 +59,7 @@ import timber.log.Timber
 import javax.inject.Inject
 
 /**
- * 鐩告満涓荤晫闈?ViewModel
+ * 相机主界�?ViewModel
  */
 @HiltViewModel
 class CameraViewModel @Inject constructor(
@@ -82,11 +82,11 @@ class CameraViewModel @Inject constructor(
     val glPreviewRenderer: GLPreviewRenderer
 ) : ViewModel() {
 
-    // 鐩告満鐘舵€?
+    // 相机状�?
     private val _cameraState = MutableStateFlow(CameraState())
     val cameraState: StateFlow<CameraState> = _cameraState.asStateFlow()
 
-    // 姘村钩浠搴︼紙浠庝紶鎰熷櫒鑾峰彇锛?
+    // 水平仪角度（从传感器获取�?
     val levelAngle: StateFlow<Float> = sensorInfoManager.stabilityState
         .map { it.roll }
         .stateIn(
@@ -95,7 +95,7 @@ class CameraViewModel @Inject constructor(
             initialValue = 0f
         )
 
-    // 璁剧疆
+    // 设置
     val settings: StateFlow<CameraSettings> = settingsRepository.settings
         .stateIn(
             scope = viewModelScope,
@@ -103,25 +103,25 @@ class CameraViewModel @Inject constructor(
             initialValue = CameraSettings()
         )
 
-    // 鍙敤鐒︽
+    // 可用焦段
     private val _availableFocalLengths = MutableStateFlow<List<FocalLength>>(emptyList())
     val availableFocalLengths: StateFlow<List<FocalLength>> = _availableFocalLengths.asStateFlow()
 
-    // LUT 鍒楄〃
+    // LUT 列表
     val lutFilters = lutManager.lutFilters
 
-    // 褰撳墠閫変腑鐨?LUT
+    // 当前选中�?LUT
     val currentLut = lutManager.currentLut
 
-    // 婊ら暅闈㈡澘鏄惁鎵撳紑
+    // 滤镜面板是否打开
     private val _isFilterPanelOpen = MutableStateFlow(false)
     val isFilterPanelOpen: StateFlow<Boolean> = _isFilterPanelOpen.asStateFlow()
     
-    // 璋冭壊鐩橀璁惧垪琛?
+    // 调色盘预设列�?
     private val _colorPresets = MutableStateFlow<List<ColorPreset>>(ColorPreset.defaultPresets())
     val colorPresets: StateFlow<List<ColorPreset>> = _colorPresets.asStateFlow()
     
-    // 鏍囧織锛氭槸鍚﹂渶瑕佸湪 Surface 灏辩华鍚庤嚜鍔ㄦ仮澶嶇浉鏈?
+    // 标志：是否需要在 Surface 就绪后自动恢复相�?
     private var shouldResumeCamera = false
     private var livePhotoInputSurface: Surface? = null
 
@@ -134,8 +134,8 @@ class CameraViewModel @Inject constructor(
     }
     
     /**
-     * 璁剧疆娓叉煋鍣ㄩ噸鏂板垵濮嬪寲鍥炶皟
-     * 褰撴覆鏌撳櫒闇€瑕侀噸鏂板垵濮嬪寲鏃讹紙渚嬪 EGL Surface 澶辨晥锛夛紝浼氳嚜鍔ㄩ噸鏂拌繛鎺ョ浉鏈?
+     * 设置渲染器重新初始化回调
+     * 当渲染器需要重新初始化时（例如 EGL Surface 失效），会自动重新连接相�?
      */
     private fun setupRendererReinitCallback() {
         glPreviewRenderer.setReinitializeCallback { cameraSurface ->
@@ -147,9 +147,15 @@ class CameraViewModel @Inject constructor(
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
                         val currentFocalLength = _cameraState.value.currentFocalLength
                         val recordingSurface = ensureLivePhotoSurface()
+                        val previewSize = selectPreviewSizeForAspect(
+                            currentFocalLength,
+                            _cameraState.value.aspectRatio
+                        )
+                        glPreviewRenderer.setCameraBufferSize(previewSize.width, previewSize.height)
                         val result = cameraSessionManager.openCamera(
                             focalLength = currentFocalLength,
                             previewSurface = cameraSurface,
+                            previewSize = previewSize,
                             recordingSurface = recordingSurface
                         )
                         result.onSuccess {
@@ -158,7 +164,7 @@ class CameraViewModel @Inject constructor(
                             shouldResumeCamera = false
                             applyPreviewEffects()
                             
-                            // 濡傛灉瀹炲喌鍔熻兘宸插惎鐢紝鎭㈠缂撳啿褰曞埗
+                            // 如果实况功能已启用，恢复缓冲录制
                             if (_cameraState.value.isLivePhotoEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                                 startLivePhotoBuffering()
                             }
@@ -175,39 +181,39 @@ class CameraViewModel @Inject constructor(
 
     private fun initializeCamera() {
         viewModelScope.launch {
-            // 鍒濆鍖栫浉鏈烘帶鍒跺櫒
+            // 初始化相机控制器
             cameraController.initialize()
 
-            // 鍒濆鍖栧鎽勭鐞?
+            // 初始化多摄管�?
             multiCameraManager.initialize()
             _availableFocalLengths.value = multiCameraManager.getAvailableFocalLengths()
 
-            // 鍒濆鍖?LUT 绠＄悊鍣?
+            // 初始�?LUT 管理�?
             lutManager.initialize()
         }
     }
     
     private fun initializeSensors() {
-        // 鍒濆鍖栦紶鎰熷櫒锛堢敤浜庢按骞充华锛?
+        // 初始化传感器（用于水平仪�?
         sensorInfoManager.initialize()
     }
     
     /**
-     * 鍒濆鍖栬皟鑹茬洏
+     * 初始化调色盘
      */
     private fun initializeColorPalette() {
         viewModelScope.launch {
-            // 浠庢寔涔呭寲鍔犺浇鑷畾涔夐璁?
+            // 从持久化加载自定义预�?
             val customPresets = colorPaletteRepository.getCustomPresets()
             _colorPresets.value = ColorPreset.defaultPresets() + customPresets
         }
     }
     
     /**
-     * 鍒濆鍖栫洿鏂瑰浘鍒嗘瀽
+     * 初始化直方图分析
      */
     private fun initializeHistogramAnalysis() {
-        // 璁剧疆甯ф暟鎹洖璋冪敤浜庣洿鏂瑰浘鍒嗘瀽
+        // 设置帧数据回调用于直方图分析
         glPreviewRenderer.setFrameDataCallback { frameData, width, height ->
             viewModelScope.launch {
                 analyzeFrameForHistogram(frameData, width, height)
@@ -216,14 +222,14 @@ class CameraViewModel @Inject constructor(
     }
     
     /**
-     * 鍒嗘瀽甯ф暟鎹敤浜庣洿鏂瑰浘
+     * 分析帧数据用于直方图
      */
     private suspend fun analyzeFrameForHistogram(frameData: ByteArray, width: Int, height: Int) {
-        // 浠呭湪鐩存柟鍥惧紑鍚椂鍒嗘瀽
+        // 仅在直方图开启时分析
         if (!settings.value.showHistogram) return
         
         try {
-            // 璁＄畻鐩存柟鍥炬暟鎹?
+            // 计算直方图数�?
             val red = FloatArray(256)
             val green = FloatArray(256)
             val blue = FloatArray(256)
@@ -231,8 +237,8 @@ class CameraViewModel @Inject constructor(
             
             var maxValue = 0f
             
-            // 瑙ｆ瀽 RGBA 鏁版嵁
-            for (i in 0 until frameData.size step 16) {  // 閲囨牱浠ユ彁楂橀€熷害
+            // 解析 RGBA 数据
+            for (i in 0 until frameData.size step 16) {  // 采样以提高速度
                 if (i + 3 >= frameData.size) break
                 
                 val r = frameData[i].toInt() and 0xFF
@@ -243,12 +249,12 @@ class CameraViewModel @Inject constructor(
                 green[g]++
                 blue[b]++
                 
-                // BT.709 浜害
+                // BT.709 亮度
                 val luma = (0.2126f * r + 0.7152f * g + 0.0722f * b).toInt().coerceIn(0, 255)
                 luminance[luma]++
             }
             
-            // 褰掍竴鍖?
+            // 归一�?
             maxValue = maxOf(
                 red.maxOrNull() ?: 0f,
                 green.maxOrNull() ?: 0f,
@@ -265,7 +271,7 @@ class CameraViewModel @Inject constructor(
                 }
             }
             
-            // 鏇存柊鐘舵€?
+            // 更新状�?
             _cameraState.value = _cameraState.value.copy(
                 histogramRed = red,
                 histogramGreen = green,
@@ -277,7 +283,7 @@ class CameraViewModel @Inject constructor(
         }
     }
 
-    // ==================== 鐩告満妯″紡 ====================
+    // ==================== 相机模式 ====================
 
     fun setMode(mode: CameraMode) {
         hapticFeedback.click()
@@ -298,10 +304,10 @@ class CameraViewModel @Inject constructor(
         setMode(newMode)
     }
 
-    // ==================== 鐒︽鍒囨崲 ====================
+    // ==================== 焦段切换 ====================
 
     fun setFocalLength(focalLength: FocalLength) {
-        // 濡傛灉鏄浉鍚岀劍娈碉紝涓嶉渶瑕佸垏鎹?
+        // 如果是相同焦段，不需要切�?
         if (focalLength == _cameraState.value.currentFocalLength) {
             return
         }
@@ -333,22 +339,28 @@ class CameraViewModel @Inject constructor(
         setFocalLength(focalLength)
     }
 
-    // ==================== 棰勮 Surface ====================
+    // ==================== 预览 Surface ====================
 
     fun onPreviewSurfaceReady(surface: Surface) {
         viewModelScope.launch {
             try {
                 Timber.d("Preview surface ready, opening camera...")
-                savedPreviewSurface = surface  // 淇濆瓨 Surface 鐢ㄤ簬鍚庣画鎭㈠
+                savedPreviewSurface = surface  // 保存 Surface 用于后续恢复
                 cameraController.setPreviewSurface(surface)
                 
-                // 浣跨敤 CameraSessionManager 鎵撳紑鐩告満骞跺惎鍔ㄩ瑙?
+                // 使用 CameraSessionManager 打开相机并启动预�?
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
                     val currentFocalLength = _cameraState.value.currentFocalLength
                     val recordingSurface = ensureLivePhotoSurface()
+                    val previewSize = selectPreviewSizeForAspect(
+                        currentFocalLength,
+                        _cameraState.value.aspectRatio
+                    )
+                    glPreviewRenderer.setCameraBufferSize(previewSize.width, previewSize.height)
                     val result = cameraSessionManager.openCamera(
                         focalLength = currentFocalLength,
                         previewSurface = surface,
+                        previewSize = previewSize,
                         recordingSurface = recordingSurface
                     )
                     
@@ -371,28 +383,34 @@ class CameraViewModel @Inject constructor(
     }
     
     /**
-     * GL 棰勮 Surface 鍑嗗灏辩华锛堢浉鏈哄簲杈撳嚭鍒版 Surface锛?
+     * GL 预览 Surface 准备就绪（相机应输出到此 Surface�?
      * 
-     * 褰撲娇鐢?GLPreviewRenderer 鏃讹紝鐩告満杈撳嚭鍒?GL 娓叉煋鍣ㄧ殑 SurfaceTexture锛?
-     * 鐒跺悗娓叉煋鍣ㄥ啀杈撳嚭鍒板睆骞曘€傝繖鏍峰彲浠ュ疄鐜板疄鏃?LUT 棰勮銆?
+     * 当使�?GLPreviewRenderer 时，相机输出�?GL 渲染器的 SurfaceTexture�?
+     * 然后渲染器再输出到屏幕。这样可以实现实�?LUT 预览�?
      */
     fun onGLPreviewSurfaceReady(surface: Surface) {
         viewModelScope.launch {
             try {
                 Timber.d("GL Preview surface ready, opening camera to GL renderer...")
-                savedPreviewSurface = surface  // 淇濆瓨 Surface 鐢ㄤ簬鍚庣画鎭㈠
+                savedPreviewSurface = surface  // 保存 Surface 用于后续恢复
                 cameraController.setPreviewSurface(surface)
                 
-                // 璁剧疆宄板€煎鐒︾姸鎬?
+                // 设置峰值对焦状�?
                 glPreviewRenderer.setFocusPeakingEnabled(settings.value.focusPeakingEnabled)
                 
-                // 浣跨敤 CameraSessionManager 鎵撳紑鐩告満骞跺惎鍔ㄩ瑙?
+                // 使用 CameraSessionManager 打开相机并启动预�?
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
                     val currentFocalLength = _cameraState.value.currentFocalLength
                     val recordingSurface = ensureLivePhotoSurface()
+                    val previewSize = selectPreviewSizeForAspect(
+                        currentFocalLength,
+                        _cameraState.value.aspectRatio
+                    )
+                    glPreviewRenderer.setCameraBufferSize(previewSize.width, previewSize.height)
                     val result = cameraSessionManager.openCamera(
                         focalLength = currentFocalLength,
                         previewSurface = surface,
+                        previewSize = previewSize,
                         recordingSurface = recordingSurface
                     )
                     
@@ -401,7 +419,7 @@ class CameraViewModel @Inject constructor(
                         _cameraState.value = _cameraState.value.copy(isCameraReady = true)
                         shouldResumeCamera = false
                         
-                        // 濡傛灉鏈夐€変腑鐨?LUT锛屾洿鏂伴瑙?
+                        // 如果有选中�?LUT，更新预�?
                         applyPreviewEffects()
                     }.onFailure { error ->
                         Timber.e(error, "Failed to open camera")
@@ -424,6 +442,7 @@ class CameraViewModel @Inject constructor(
                 livePhotoManager.stopBuffering()
             }
             livePhotoInputSurface = null
+            livePhotoInputSurface = null
             cameraSessionManager.closeCamera()
             _cameraState.value = _cameraState.value.copy(isCameraReady = false)
             shouldResumeCamera = true
@@ -432,13 +451,13 @@ class CameraViewModel @Inject constructor(
         }
     }
 
-    // ==================== 闂厜鐏?====================
+    // ==================== 闪光�?====================
 
     fun setFlashMode(mode: FlashMode) {
         hapticFeedback.tick()
         _cameraState.value = _cameraState.value.copy(flashMode = mode)
         
-        // 搴旂敤闂厜鐏缃埌鐩告満浼氳瘽
+        // 应用闪光灯设置到相机会话
         cameraSessionManager.setFlashMode(mode)
         Timber.d("Flash mode set to: $mode")
     }
@@ -450,10 +469,10 @@ class CameraViewModel @Inject constructor(
         setFlashMode(modes[nextIndex])
     }
 
-    // ==================== 鐢婚潰姣斾緥 ====================
+    // ==================== 画面比例 ====================
 
     fun setAspectRatio(ratio: AspectRatio) {
-        // 濡傛灉鏄浉鍚屾瘮渚嬶紝涓嶉渶瑕佸垏鎹?
+        // 如果是相同比例，不需要切�?
         if (ratio == _cameraState.value.aspectRatio) {
             return
         }
@@ -461,11 +480,53 @@ class CameraViewModel @Inject constructor(
         hapticFeedback.tick()
         _cameraState.value = _cameraState.value.copy(aspectRatio = ratio)
         Timber.d("Aspect ratio changed to: $ratio")
+        reopenCameraForAspectRatio(ratio)
         
-        // 娉ㄦ剰锛氱敾闈㈡瘮渚嬬殑鏀瑰彉浼氶€氳繃 CameraViewfinder 鐨?aspectRatio 鍙傛暟鑷姩鏇存柊 UI
-        // 鐩告満棰勮鏈韩涓嶉渶瑕侀噸鏂伴厤缃紝鍙渶瑕佹敼鍙樺彇鏅櫒鐨勬樉绀鸿鍒囧尯鍩?
+        // 注意：画面比例的改变会通过 CameraViewfinder �?aspectRatio 参数自动更新 UI
+        // 相机预览本身不需要重新配置，只需要改变取景器的显示裁切区�?
     }
 
+
+    private fun reopenCameraForAspectRatio(ratio: AspectRatio) {
+        val previewSurface = glPreviewRenderer.getCameraSurface() ?: savedPreviewSurface
+        if (previewSurface == null || !previewSurface.isValid) {
+            Timber.w("Aspect ratio change skipped: preview surface not ready")
+            shouldResumeCamera = true
+            return
+        }
+        viewModelScope.launch {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    val currentFocalLength = _cameraState.value.currentFocalLength
+                    val recordingSurface = ensureLivePhotoSurface()
+                    val previewSize = selectPreviewSizeForAspect(
+                        currentFocalLength,
+                        ratio
+                    )
+                    glPreviewRenderer.setCameraBufferSize(previewSize.width, previewSize.height)
+                    val result = cameraSessionManager.openCamera(
+                        focalLength = currentFocalLength,
+                        previewSurface = previewSurface,
+                        previewSize = previewSize,
+                        recordingSurface = recordingSurface
+                    )
+                    result.onSuccess {
+                        _cameraState.value = _cameraState.value.copy(isCameraReady = true)
+                        shouldResumeCamera = false
+                        applyPreviewEffects()
+                        glPreviewRenderer.startRendering()
+                    }.onFailure { error ->
+                        Timber.e(error, "Failed to reopen camera for aspect ratio")
+                        _cameraState.value = _cameraState.value.copy(isCameraReady = false)
+                        shouldResumeCamera = true
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error reopening camera for aspect ratio")
+                shouldResumeCamera = true
+            }
+        }
+    }
 
     private fun ensureLivePhotoSurface(): Surface? {
         if (!_cameraState.value.isLivePhotoEnabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
@@ -498,9 +559,15 @@ class CameraViewModel @Inject constructor(
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                     val currentFocalLength = _cameraState.value.currentFocalLength
+                    val previewSize = selectPreviewSizeForAspect(
+                        currentFocalLength,
+                        _cameraState.value.aspectRatio
+                    )
+                    glPreviewRenderer.setCameraBufferSize(previewSize.width, previewSize.height)
                     val result = cameraSessionManager.openCamera(
                         focalLength = currentFocalLength,
                         previewSurface = previewSurface,
+                        previewSize = previewSize,
                         recordingSurface = recordingSurface
                     )
                     result.onSuccess {
@@ -548,7 +615,7 @@ class CameraViewModel @Inject constructor(
     }
     
     /**
-     * 鍚姩瀹炲喌鐓х墖缂撳啿褰曞埗
+     * 启动实况照片缓冲录制
      */
     @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
     private fun startLivePhotoBuffering() {
@@ -569,13 +636,13 @@ class CameraViewModel @Inject constructor(
         }
     }
 
-    // ==================== 婊ら暅 ====================
+    // ==================== 滤镜 ====================
 
     fun selectLut(lutId: String?) {
         hapticFeedback.tick()
         lutManager.selectLut(lutId)
         
-        // 濡傛灉 lutId 涓嶄负 null锛屽皾璇曚粠 lutFilters 涓幏鍙栧畬鏁寸殑 LutFilter 瀵硅薄
+        // 如果 lutId 不为 null，尝试从 lutFilters 中获取完整的 LutFilter 对象
         val lut = if (lutId != null) {
             lutManager.lutFilters.value.find { it.id == lutId }
         } else null
@@ -585,7 +652,7 @@ class CameraViewModel @Inject constructor(
             selectedLut = lut
         )
         
-        // 鏇存柊 GL 棰勮娓叉煋鍣ㄧ殑 LUT
+        // 更新 GL 预览渲染器的 LUT
         updatePreviewLut(lut)
     }
 
@@ -597,25 +664,25 @@ class CameraViewModel @Inject constructor(
             selectedLut = lut
         )
         
-        // 鏇存柊 GL 棰勮娓叉煋鍣ㄧ殑 LUT
+        // 更新 GL 预览渲染器的 LUT
         updatePreviewLut(lut)
     }
     
     /**
-     * 鏇存柊棰勮 LUT
+     * 更新预览 LUT
      */
     private fun updatePreviewLut(lut: LutFilter?) {
         if (lut == null) {
-            // 娓呴櫎 LUT
+            // 清除 LUT
             glPreviewRenderer.setLutData(null, 0, null)
         } else {
-            // 鑾峰彇 LUT 鏁版嵁锛屽湪 GL 绾跨▼涓婂垱寤虹汗鐞?
+            // 获取 LUT 数据，在 GL 线程上创建纹�?
             val lutData = lutManager.getLutData(lut.id)
             if (lutData != null) {
                 glPreviewRenderer.setLutData(lut.id, lutData.size, lutData.data)
                 Timber.d("Preview LUT updated with data: ${lut.name}, size=${lutData.size}")
             } else {
-                // LUT 鏁版嵁灏氭湭鍔犺浇锛屽皾璇曞姞杞?
+                // LUT 数据尚未加载，尝试加�?
                 viewModelScope.launch {
                     lutManager.ensureLutLoaded(lut.id)
                     val loadedData = lutManager.getLutData(lut.id)
@@ -644,15 +711,15 @@ class CameraViewModel @Inject constructor(
     fun setLutIntensity(intensity: Int) {
         val clampedIntensity = intensity.coerceIn(0, 100)
         _cameraState.value = _cameraState.value.copy(lutIntensity = clampedIntensity)
-        // 鏇存柊棰勮娓叉煋鍣ㄧ殑 LUT 寮哄害 (0-1)
+        // 更新预览渲染器的 LUT 强度 (0-1)
         glPreviewRenderer.setLutIntensity(clampedIntensity / 100f)
     }
 
     fun setLutIntensity(intensity: Float) {
-        // 鍋囪杈撳叆鏄?0-1 鑼冨洿鐨?Float锛岃浆鎹负 0-100 鐨?Int
+        // 假设输入�?0-1 范围�?Float，转换为 0-100 �?Int
         val intIntensity = (intensity * 100).toInt().coerceIn(0, 100)
         _cameraState.value = _cameraState.value.copy(lutIntensity = intIntensity)
-        // 鏇存柊棰勮娓叉煋鍣ㄧ殑 LUT 寮哄害 (0-1)
+        // 更新预览渲染器的 LUT 强度 (0-1)
         glPreviewRenderer.setLutIntensity(intIntensity / 100f)
     }
 
@@ -663,7 +730,7 @@ class CameraViewModel @Inject constructor(
                 val importedLut = lutManager.importLutFromUri(uri)
                 if (importedLut != null) {
                     Timber.d("LUT imported successfully: ${importedLut.name}")
-                    // 鑷姩閫変腑瀵煎叆鐨?LUT
+                    // 自动选中导入�?LUT
                     selectLut(importedLut)
                     hapticFeedback.success()
                 } else {
@@ -685,10 +752,10 @@ class CameraViewModel @Inject constructor(
         _isFilterPanelOpen.value = false
     }
 
-    // ==================== 璋冭壊鐩?====================
+    // ==================== 调色�?====================
 
     /**
-     * 鎵撳紑璋冭壊鐩橀潰鏉?
+     * 打开调色盘面�?
      */
     fun openColorPalettePanel() {
         hapticFeedback.tick()
@@ -696,22 +763,22 @@ class CameraViewModel @Inject constructor(
     }
 
     /**
-     * 鍏抽棴璋冭壊鐩橀潰鏉?
+     * 关闭调色盘面�?
      */
     fun closeColorPalettePanel() {
         _cameraState.value = _cameraState.value.copy(isColorPalettePanelOpen = false)
     }
 
     /**
-     * 鏇存柊璋冭壊鍙傛暟
+     * 更新调色参数
      */
     fun updateColorPalette(palette: ColorPalette) {
         _cameraState.value = _cameraState.value.copy(
             colorPalette = palette,
-            selectedPresetId = null // 鐢ㄦ埛鎵嬪姩璋冩暣鍚庡彇娑堥璁鹃€夋嫨
+            selectedPresetId = null // 用户手动调整后取消预设选择
         )
         
-        // 瀹炴椂鏇存柊 GL 娓叉煋鍣?
+        // 实时更新 GL 渲染�?
         glPreviewRenderer.updateColorPalette(
             temperatureKelvin = palette.temperatureKelvin,
             saturation = palette.saturation,
@@ -720,7 +787,7 @@ class CameraViewModel @Inject constructor(
     }
 
     /**
-     * 閫夋嫨棰勮
+     * 选择预设
      */
     fun selectColorPreset(preset: ColorPreset) {
         hapticFeedback.tick()
@@ -729,7 +796,7 @@ class CameraViewModel @Inject constructor(
             selectedPresetId = preset.id
         )
         
-        // 瀹炴椂鏇存柊 GL 娓叉煋鍣?
+        // 实时更新 GL 渲染�?
         glPreviewRenderer.updateColorPalette(
             temperatureKelvin = preset.palette.temperatureKelvin,
             saturation = preset.palette.saturation,
@@ -738,7 +805,7 @@ class CameraViewModel @Inject constructor(
     }
 
     /**
-     * 閲嶇疆鎵€鏈夎皟鑹插弬鏁?
+     * 重置所有调色参�?
      */
     fun resetColorPalette() {
         hapticFeedback.click()
@@ -748,7 +815,7 @@ class CameraViewModel @Inject constructor(
             selectedPresetId = ColorPreset.PRESET_ORIGINAL.id
         )
         
-        // 瀹炴椂鏇存柊 GL 娓叉煋鍣?
+        // 实时更新 GL 渲染�?
         glPreviewRenderer.updateColorPalette(
             temperatureKelvin = defaultPalette.temperatureKelvin,
             saturation = defaultPalette.saturation,
@@ -757,7 +824,7 @@ class CameraViewModel @Inject constructor(
     }
 
     /**
-     * 淇濆瓨褰撳墠鍙傛暟涓烘柊棰勮
+     * 保存当前参数为新预设
      */
     fun saveCurrentAsPreset(name: String) {
         viewModelScope.launch {
@@ -771,10 +838,10 @@ class CameraViewModel @Inject constructor(
                 
                 colorPaletteRepository.saveCustomPreset(newPreset)
                 
-                // 鏇存柊棰勮鍒楄〃
+                // 更新预设列表
                 _colorPresets.value = ColorPreset.defaultPresets() + colorPaletteRepository.getCustomPresets()
                 
-                // 閫変腑鏂伴璁?
+                // 选中新预�?
                 _cameraState.value = _cameraState.value.copy(selectedPresetId = newPreset.id)
                 
                 hapticFeedback.success()
@@ -786,14 +853,14 @@ class CameraViewModel @Inject constructor(
         }
     }
 
-    // ==================== Pro 妯″紡鍙傛暟 ====================
+    // ==================== Pro 模式参数 ====================
 
     fun updateManualParameters(update: (ManualParameters) -> ManualParameters) {
         val current = _cameraState.value.manualParameters
         val updated = update(current)
         _cameraState.value = _cameraState.value.copy(manualParameters = updated)
         
-        // 灏嗗弬鏁板簲鐢ㄥ埌鐩告満浼氳瘽
+        // 将参数应用到相机会话
         viewModelScope.launch {
             try {
                 cameraSessionManager.updateManualParameters(updated)
@@ -830,10 +897,10 @@ class CameraViewModel @Inject constructor(
         updateManualParameters { it.copy(isAfLocked = !it.isAfLocked) }
     }
 
-    // ==================== 鎷嶇収 ====================
+    // ==================== 拍照 ====================
     
     /**
-     * 澶勭悊鍚庣殑鐓х墖鏁版嵁锛堝寘鍚柟鍚戜俊鎭級
+     * 处理后的照片数据（包含方向信息）
      */
     private data class ProcessedPhoto(
         val data: ByteArray,
@@ -841,13 +908,13 @@ class CameraViewModel @Inject constructor(
     )
 
     /**
-     * 鎷嶇収 - 浣跨敤寮傛鍚庡彴澶勭悊
+     * 拍照 - 使用异步后台处理
      * 
-     * 娴佺▼锛?
-     * 1. 绔嬪嵆鎹曡幏鐓х墖鏁版嵁
-     * 2. 灏嗗鐞嗕换鍔℃彁浜ゅ埌鍚庡彴闃熷垪
-     * 3. 绔嬪嵆杩斿洖璁╃敤鎴峰彲浠ョ户缁媿鐓?
-     * 4. 鍚庡彴瀹屾垚澶勭悊鍚庤嚜鍔ㄤ繚瀛樺埌鐩稿唽
+     * 流程�?
+     * 1. 立即捕获照片数据
+     * 2. 将处理任务提交到后台队列
+     * 3. 立即返回让用户可以继续拍�?
+     * 4. 后台完成处理后自动保存到相册
      */
     fun capturePhoto() {
         hapticFeedback.heavyClick()
@@ -855,7 +922,7 @@ class CameraViewModel @Inject constructor(
 
         viewModelScope.launch {
             try {
-                // 浣跨敤 CameraSessionManager 鎷嶇収锛堝畠宸茬粡鎵撳紑浜嗙浉鏈猴級
+                // 使用 CameraSessionManager 拍照（它已经打开了相机）
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                     val captureStart = System.currentTimeMillis()
                     val photoData = cameraSessionManager.capturePhoto(
@@ -863,7 +930,7 @@ class CameraViewModel @Inject constructor(
                     )
                     Timber.d("Photo captured in ${System.currentTimeMillis() - captureStart}ms, size: ${photoData.size} bytes")
                     
-                    // 鏀堕泦褰撳墠鐨勫鐞嗗弬鏁帮紙鍦ㄤ富绾跨▼鎹曡幏锛岄伩鍏嶇珵鎬佹潯浠讹級
+                    // 收集当前的处理参数（在主线程捕获，避免竞态条件）
                     val selectedLut = _cameraState.value.selectedLut ?: run {
                         val lutId = _cameraState.value.currentLutId
                         if (lutId != null) lutManager.lutFilters.value.find { it.id == lutId } else null
@@ -874,7 +941,7 @@ class CameraViewModel @Inject constructor(
                     val watermarkPosition = settings.value.watermarkPosition
                     val isLivePhoto = _cameraState.value.isLivePhotoEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
                     
-                    // 鎻愪氦鍒板悗鍙板鐞嗛槦鍒?- 绔嬪嵆杩斿洖
+                    // 提交到后台处理队�?- 立即返回
                     photoProcessingQueue.submit(
                         photoData = photoData,
                         selectedLut = selectedLut,
@@ -884,11 +951,11 @@ class CameraViewModel @Inject constructor(
                         watermarkPosition = watermarkPosition,
                         isLivePhoto = isLivePhoto
                     ) { result ->
-                        // 澶勭悊瀹屾垚鍥炶皟锛堝湪鍚庡彴绾跨▼鎵ц锛?
+                        // 处理完成回调（在后台线程执行�?
                         handleProcessedPhoto(result, isLivePhoto)
                     }
                     
-                    // 蹇€熷弽棣?- 鎷嶇収瀹屾垚锛堝鐞嗗湪鍚庡彴缁х画锛?
+                    // 快速反�?- 拍照完成（处理在后台继续�?
                     hapticFeedback.success()
                     Timber.d("Photo submitted for background processing")
                     
@@ -899,14 +966,14 @@ class CameraViewModel @Inject constructor(
                 Timber.e(e, "Failed to capture photo")
                 hapticFeedback.error()
             } finally {
-                // 绔嬪嵆閲嶇疆鎷嶇収鐘舵€侊紝璁╃敤鎴峰彲浠ュ揩閫熻繛缁媿鐓?
+                // 立即重置拍照状态，让用户可以快速连续拍�?
                 _cameraState.value = _cameraState.value.copy(isCapturing = false)
             }
         }
     }
     
     /**
-     * 澶勭悊瀹屾垚鐨勭収鐗囷紙鍦ㄥ悗鍙伴槦鍒椾腑璋冪敤锛?
+     * 处理完成的照片（在后台队列中调用�?
      */
     private suspend fun handleProcessedPhoto(result: ProcessedPhotoResult, isLivePhoto: Boolean) {
         if (!result.isSuccess) {
@@ -926,11 +993,11 @@ class CameraViewModel @Inject constructor(
     }
 
     /**
-     * 搴旂敤 LUT 婊ら暅鍜岃皟鑹茬洏鍙傛暟鍒扮収鐗囷紝鍚屾椂淇濈暀 EXIF 鏂瑰悜淇℃伅
-     * 浣跨敤鍚庡彴绾跨▼澶勭悊浠ラ伩鍏?ANR
+     * 应用 LUT 滤镜和调色盘参数到照片，同时保留 EXIF 方向信息
+     * 使用后台线程处理以避�?ANR
      */
     private suspend fun applyLutToPhoto(photoData: ByteArray): ProcessedPhoto = withContext(Dispatchers.Default) {
-        // 鍏堜粠鍘熷 JPEG 璇诲彇鏂瑰悜淇℃伅
+        // 先从原始 JPEG 读取方向信息
         val originalOrientation = try {
             val inputStream = java.io.ByteArrayInputStream(photoData)
             val exif = ExifInterface(inputStream)
@@ -945,7 +1012,7 @@ class CameraViewModel @Inject constructor(
         
         Timber.d("Original photo orientation: $originalOrientation")
         
-        // 浼樺厛浣跨敤 selectedLut锛屽鏋滀负 null 鍒欏皾璇曢€氳繃 currentLutId 鏌ユ壘
+        // 优先使用 selectedLut，如果为 null 则尝试通过 currentLutId 查找
         var selectedLut = _cameraState.value.selectedLut
         if (selectedLut == null) {
             val lutId = _cameraState.value.currentLutId
@@ -954,11 +1021,11 @@ class CameraViewModel @Inject constructor(
             }
         }
         
-        val lutIntensity = _cameraState.value.lutIntensity / 100f  // 杞崲涓?0-1 鑼冨洿
+        val lutIntensity = _cameraState.value.lutIntensity / 100f  // 转换�?0-1 范围
         val colorPalette = _cameraState.value.colorPalette
         val hasColorAdjustments = !colorPalette.isDefault()
         
-        // 濡傛灉娌℃湁閫変腑 LUT 涓旀病鏈夎皟鑹插弬鏁帮紝鐩存帴杩斿洖鍘熷浘
+        // 如果没有选中 LUT 且没有调色参数，直接返回原图
         if ((selectedLut == null || lutIntensity <= 0f) && !hasColorAdjustments) {
             Timber.d("No LUT selected and no color adjustments, returning original photo")
             return@withContext ProcessedPhoto(photoData, originalOrientation)
@@ -967,7 +1034,7 @@ class CameraViewModel @Inject constructor(
         try {
             Timber.d("Applying effects - LUT: ${selectedLut?.name}, ColorPalette: temp=${colorPalette.temperatureKelvin}K, sat=${colorPalette.saturation}, tone=${colorPalette.tone}")
             
-            // 瑙ｇ爜 JPEG 涓?Bitmap
+            // 解码 JPEG �?Bitmap
             val startDecode = System.currentTimeMillis()
             var bitmap = BitmapFactory.decodeByteArray(photoData, 0, photoData.size)
             if (bitmap == null) {
@@ -976,7 +1043,7 @@ class CameraViewModel @Inject constructor(
             }
             Timber.d("Decoded bitmap: ${bitmap.width}x${bitmap.height} in ${System.currentTimeMillis() - startDecode}ms")
             
-            // 搴旂敤璋冭壊鐩樺弬鏁?
+            // 应用调色盘参�?
             if (hasColorAdjustments) {
                 val startColor = System.currentTimeMillis()
                 Timber.d("Starting color palette processing...")
@@ -984,7 +1051,7 @@ class CameraViewModel @Inject constructor(
                 Timber.d("Color palette applied in ${System.currentTimeMillis() - startColor}ms")
             }
             
-            // 搴旂敤 LUT
+            // 应用 LUT
             if (selectedLut != null && lutIntensity > 0f) {
                 val startLut = System.currentTimeMillis()
                 Timber.d("Starting LUT processing...")
@@ -996,7 +1063,7 @@ class CameraViewModel @Inject constructor(
                 Timber.d("LUT applied in ${System.currentTimeMillis() - startLut}ms")
             }
             
-            // 搴旂敤姘村嵃锛堝鏋滃惎鐢級- 浼犻€?EXIF 鏂瑰悜浠ョ‘淇濇按鍗颁綅缃纭?
+            // 应用水印（如果启用）- 传�?EXIF 方向以确保水印位置正�?
             val watermarkEnabled = settings.value.watermarkEnabled
             if (watermarkEnabled) {
                 val startWatermark = System.currentTimeMillis()
@@ -1005,7 +1072,7 @@ class CameraViewModel @Inject constructor(
                 Timber.d("Watermark applied in ${System.currentTimeMillis() - startWatermark}ms")
             }
             
-            // 缂栫爜鍥?JPEG
+            // 编码�?JPEG
             val startEncode = System.currentTimeMillis()
             val outputStream = ByteArrayOutputStream()
             bitmap.compress(Bitmap.CompressFormat.JPEG, 95, outputStream)
@@ -1020,14 +1087,14 @@ class CameraViewModel @Inject constructor(
     }
     
     /**
-     * 搴旂敤璋冭壊鐩樺弬鏁板埌 Bitmap锛圕PU 澶勭悊锛岀敤浜庢媿鐓э級
+     * 应用调色盘参数到 Bitmap（CPU 处理，用于拍照）
      * 
-     * 涓?GPU Shader (ColorPaletteShader) 绠楁硶淇濇寔涓€鑷达細
-     * 1. 鑹叉俯锛氫娇鐢?RGB 涔樻暟
-     * 2. 楗卞拰搴︼細浣跨敤 HSL 棰滆壊绌洪棿璋冩暣
-     * 3. 鍏夊奖锛氫娇鐢?S 鏇茬嚎璋冩暣瀵规瘮搴?
+     * �?GPU Shader (ColorPaletteShader) 算法保持一致：
+     * 1. 色温：使�?RGB 乘数
+     * 2. 饱和度：使用 HSL 颜色空间调整
+     * 3. 光影：使�?S 曲线调整对比�?
      * 
-     * 浼樺寲锛氫娇鐢ㄩ璁＄畻鐨勬煡鎵捐〃鍔犻€?sRGB <-> Linear 杞崲
+     * 优化：使用预计算的查找表加�?sRGB <-> Linear 转换
      */
     private fun applyColorPaletteToBitmap(input: Bitmap, palette: ColorPalette): Bitmap {
         val width = input.width
@@ -1036,32 +1103,32 @@ class CameraViewModel @Inject constructor(
         val pixels = IntArray(totalPixels)
         input.getPixels(pixels, 0, width, 0, 0, width, height)
         
-        // 鑾峰彇鍙傛暟锛堜笌 GPU Shader 瀹屽叏涓€鑷达級
+        // 获取参数（与 GPU Shader 完全一致）
         val targetKelvin = palette.targetKelvin
         val exposureGain = palette.exposureGain
         val saturationAdjust = palette.saturationAdjust
         
-        // 璁＄畻鐧藉钩琛?RGB 涔樻暟
+        // 计算白平�?RGB 乘数
         val wbMult = calculateWhiteBalanceMultipliers(targetKelvin)
         val wbR = wbMult[0]
         val wbG = wbMult[1]
         val wbB = wbMult[2]
         
-        // 棰勮绠?sRGB -> Linear 鏌ユ壘琛?(256 涓€?
+        // 预计�?sRGB -> Linear 查找�?(256 个�?
         val srgbToLinearLut = FloatArray(256) { i ->
             val x = i / 255f
             if (x <= 0.04045f) x / 12.92f
             else ((x + 0.055f) / 1.055f).toDouble().pow(2.4).toFloat()
         }
         
-        // 棰勮绠?Linear -> sRGB 鏌ユ壘琛?(4097 涓€硷紝瑕嗙洊 0-1 鑼冨洿)
+        // 预计�?Linear -> sRGB 查找�?(4097 个值，覆盖 0-1 范围)
         val linearToSrgbLut = FloatArray(4097) { i ->
             val x = i / 4096f
             if (x <= 0.0031308f) x * 12.92f
             else (1.055f * x.toDouble().pow(1.0 / 2.4).toFloat() - 0.055f)
         }
         
-        // 浣跨敤鍒嗗潡澶勭悊浼樺寲鎬ц兘锛圓ndroid 涓?Java Stream 鏁堢巼浣庯級
+        // 使用分块处理优化性能（Android �?Java Stream 效率低）
         val numCores = Runtime.getRuntime().availableProcessors()
         val chunkSize = (totalPixels + numCores - 1) / numCores
         val threads = Array(numCores) { threadIdx ->
@@ -1075,23 +1142,23 @@ class CameraViewModel @Inject constructor(
             val gi = (pixel shr 8) and 0xFF
             val bi = pixel and 0xFF
             
-            // 1. sRGB 鈫?Linear锛堜娇鐢ㄦ煡鎵捐〃锛?
+            // 1. sRGB �?Linear（使用查找表�?
             var r = srgbToLinearLut[ri]
             var g = srgbToLinearLut[gi]
             var b = srgbToLinearLut[bi]
             
-            // 2. 鐧藉钩琛★紙鍦?Linear 绌洪棿锛?
+            // 2. 白平衡（�?Linear 空间�?
             r *= wbR
             g *= wbG
             b *= wbB
             
-            // 3. 鏇濆厜澧炵泭锛堝湪 Linear 绌洪棿锛?
+            // 3. 曝光增益（在 Linear 空间�?
             r *= exposureGain
             g *= exposureGain
             b *= exposureGain
             
-            // 4. 楗卞拰搴﹁皟鏁达紙OKLab 绌洪棿锛屽唴鑱旇绠楋級
-            // === 鍐呰仈 linearRgbToOklab ===
+            // 4. 饱和度调整（OKLab 空间，内联计算）
+            // === 内联 linearRgbToOklab ===
             val lms_l = 0.4122214708f * r + 0.5363325363f * g + 0.0514459929f * b
             val lms_m = 0.2119034982f * r + 0.6806995451f * g + 0.1073969566f * b
             val lms_s = 0.0883024619f * r + 0.2817188376f * g + 0.6299787005f * b
@@ -1104,18 +1171,18 @@ class CameraViewModel @Inject constructor(
             val okA = 1.9779984951f * lCbrt - 2.4285922050f * mCbrt + 0.4505937099f * sCbrt
             val okB = 0.0259040371f * lCbrt + 0.7827717662f * mCbrt - 0.8086757660f * sCbrt
             
-            // === 鍐呰仈 adjustSaturationOklab ===
+            // === 内联 adjustSaturationOklab ===
             val C = kotlin.math.sqrt((okA * okA + okB * okB).toDouble()).toFloat()
             var adjA = okA
             var adjB = okB
             
             if (C >= 0.0001f) {
-                // 鍐呰仈 smoothstep 鐢ㄤ簬楂樺厜淇濇姢
+                // 内联 smoothstep 用于高光保护
                 var t = (okL - 0.7f) / 0.3f
                 if (t < 0f) t = 0f else if (t > 1f) t = 1f
                 val highlightProtection = 1f - t * t * (3f - 2f * t)
                 
-                // 鍐呰仈 smoothstep 鐢ㄤ簬闃村奖淇濇姢
+                // 内联 smoothstep 用于阴影保护
                 t = okL / 0.2f
                 if (t < 0f) t = 0f else if (t > 1f) t = 1f
                 val shadowProtection = t * t * (3f - 2f * t)
@@ -1123,7 +1190,7 @@ class CameraViewModel @Inject constructor(
                 val effectiveSatAdjust = saturationAdjust * highlightProtection * shadowProtection
                 var newC = C * (1f + effectiveSatAdjust)
                 
-                // 杞鍓?
+                // 软裁�?
                 if (newC > 0.4f) {
                     newC = 0.4f + (newC - 0.4f) / (1f + (newC - 0.4f))
                 }
@@ -1134,7 +1201,7 @@ class CameraViewModel @Inject constructor(
                 adjB = okB * scale
             }
             
-            // === 鍐呰仈 oklabToLinearRgb ===
+            // === 内联 oklabToLinearRgb ===
             val lCbrt2 = okL + 0.3963377774f * adjA + 0.2158037573f * adjB
             val mCbrt2 = okL - 0.1055613458f * adjA - 0.0638541728f * adjB
             val sCbrt2 = okL - 0.0894841775f * adjA - 1.2914855480f * adjB
@@ -1147,7 +1214,7 @@ class CameraViewModel @Inject constructor(
             g = -1.2684380046f * ll + 2.6097574011f * mm - 0.3413193965f * ss
             b = -0.0041960863f * ll - 0.7034186147f * mm + 1.7076147010f * ss
             
-            // 5. Linear 鈫?sRGB锛堜娇鐢ㄦ煡鎵捐〃锛屽唴鑱旇竟鐣屾鏌ワ級
+            // 5. Linear �?sRGB（使用查找表，内联边界检查）
             var rIdx = (r * 4096f).toInt()
             var gIdx = (g * 4096f).toInt()
             var bIdx = (b * 4096f).toInt()
@@ -1159,7 +1226,7 @@ class CameraViewModel @Inject constructor(
             val gSrgb = linearToSrgbLut[gIdx]
             val bSrgb = linearToSrgbLut[bIdx]
             
-            // 杞崲鍥?0-255 鑼冨洿
+            // 转换�?0-255 范围
             var finalR = (rSrgb * 255f).toInt()
             var finalG = (gSrgb * 255f).toInt()
             var finalB = (bSrgb * 255f).toInt()
@@ -1172,9 +1239,9 @@ class CameraViewModel @Inject constructor(
             }
         }
         
-        // 鍚姩鎵€鏈夌嚎绋?
+        // 启动所有线�?
         threads.forEach { it.start() }
-        // 绛夊緟鎵€鏈夌嚎绋嬪畬鎴?
+        // 等待所有线程完�?
         threads.forEach { it.join() }
         
         val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
@@ -1187,10 +1254,10 @@ class CameraViewModel @Inject constructor(
         return output
     }
     
-    // ============= 棰滆壊绌洪棿杞崲鍑芥暟锛堜笌 GPU Shader 瀹屽叏涓€鑷达級=============
+    // ============= 颜色空间转换函数（与 GPU Shader 完全一致）=============
     
     /**
-     * sRGB 鈫?Linear锛堢簿纭浆鎹紝涓?GPU Shader 涓€鑷达級
+     * sRGB �?Linear（精确转换，�?GPU Shader 一致）
      */
     private fun srgbToLinear(x: Float): Float {
         return if (x <= 0.04045f) {
@@ -1201,7 +1268,7 @@ class CameraViewModel @Inject constructor(
     }
     
     /**
-     * Linear 鈫?sRGB锛堢簿纭浆鎹紝涓?GPU Shader 涓€鑷达級
+     * Linear �?sRGB（精确转换，�?GPU Shader 一致）
      */
     private fun linearToSrgb(x: Float): Float {
         val clamped = x.coerceIn(0f, 1f)
@@ -1213,7 +1280,7 @@ class CameraViewModel @Inject constructor(
     }
     
     /**
-     * Linear RGB 鈫?OKLab锛堜笌 GPU Shader 涓€鑷达級
+     * Linear RGB �?OKLab（与 GPU Shader 一致）
      */
     private fun linearRgbToOklab(r: Float, g: Float, b: Float): FloatArray {
         val l = 0.4122214708f * r + 0.5363325363f * g + 0.0514459929f * b
@@ -1232,7 +1299,7 @@ class CameraViewModel @Inject constructor(
     }
     
     /**
-     * OKLab 鈫?Linear RGB锛堜笌 GPU Shader 涓€鑷达級
+     * OKLab �?Linear RGB（与 GPU Shader 一致）
      */
     private fun oklabToLinearRgb(oklab: FloatArray): FloatArray {
         val L = oklab[0]
@@ -1255,31 +1322,31 @@ class CameraViewModel @Inject constructor(
     }
     
     /**
-     * OKLab 绌洪棿楗卞拰搴﹁皟鏁达紙甯﹂珮鍏?闃村奖淇濇姢锛屼笌 GPU Shader 涓€鑷达級
+     * OKLab 空间饱和度调整（带高�?阴影保护，与 GPU Shader 一致）
      */
     private fun adjustSaturationOklab(oklab: FloatArray, satAdjust: Float): FloatArray {
         val L = oklab[0]
         val a = oklab[1]
         val b = oklab[2]
         
-        // 璁＄畻鑹插害 C
+        // 计算色度 C
         val C = kotlin.math.sqrt((a * a + b * b).toDouble()).toFloat()
         if (C < 0.0001f) {
-            return oklab // 鐏拌壊锛屾棤闇€璋冩暣
+            return oklab // 灰色，无需调整
         }
         
-        // 楂樺厜淇濇姢锛氫寒搴﹁秺楂橈紝楗卞拰搴﹁皟鏁磋秺寮?
+        // 高光保护：亮度越高，饱和度调整越�?
         val highlightProtection = 1f - smoothstep(0.7f, 1.0f, L)
-        // 闃村奖淇濇姢锛氫寒搴﹁秺浣庯紝楗卞拰搴﹁皟鏁磋秺寮?
+        // 阴影保护：亮度越低，饱和度调整越�?
         val shadowProtection = smoothstep(0.0f, 0.2f, L)
         
-        // 璁＄畻鏈夋晥楗卞拰搴﹁皟鏁撮噺
+        // 计算有效饱和度调整量
         val effectiveSatAdjust = satAdjust * highlightProtection * shadowProtection
         
-        // 搴旂敤楗卞拰搴﹁皟鏁?
+        // 应用饱和度调�?
         var newC = C * (1f + effectiveSatAdjust)
         
-        // 杞鍓槻姝㈣繃楗卞拰锛堜笌 GPU Shader 涓€鑷达級
+        // 软裁剪防止过饱和（与 GPU Shader 一致）
         if (newC > 0.4f) {
             newC = 0.4f + (newC - 0.4f) / (1f + (newC - 0.4f))
         }
@@ -1292,7 +1359,7 @@ class CameraViewModel @Inject constructor(
     }
     
     /**
-     * 骞虫粦闃舵鍑芥暟锛堜笌 GPU Shader 涓€鑷达級
+     * 平滑阶梯函数（与 GPU Shader 一致）
      */
     private fun smoothstep(edge0: Float, edge1: Float, x: Float): Float {
         val t = ((x - edge0) / (edge1 - edge0)).coerceIn(0f, 1f)
@@ -1300,29 +1367,29 @@ class CameraViewModel @Inject constructor(
     }
     
     /**
-     * 璁＄畻鐧藉钩琛?RGB 涔樻暟锛堜笌 GPU Shader kelvinToRgbMultipliers 瀹屽叏涓€鑷达級
+     * 计算白平�?RGB 乘数（与 GPU Shader kelvinToRgbMultipliers 完全一致）
      * 
-     * 浣跨敤 Tanner Helland 绠楁硶璁＄畻鑹叉俯瀵瑰簲鐨?RGB 鍊硷紝鐒跺悗浠?5500K 涓哄熀鍑嗗綊涓€鍖?
+     * 使用 Tanner Helland 算法计算色温对应�?RGB 值，然后�?5500K 为基准归一�?
      */
     private fun calculateWhiteBalanceMultipliers(targetKelvin: Float): FloatArray {
         val temp = targetKelvin / 100f
         val rgb = FloatArray(3)
         
-        // 绾㈣壊鍒嗛噺
+        // 红色分量
         rgb[0] = if (temp <= 66f) {
             1f
         } else {
             (1.292936186f * Math.pow((temp - 60.0).toDouble(), -0.1332047592).toFloat()).coerceIn(0f, 1f)
         }
         
-        // 缁胯壊鍒嗛噺
+        // 绿色分量
         rgb[1] = if (temp <= 66f) {
             (0.3900815788f * Math.log(temp.toDouble()).toFloat() - 0.6318414438f).coerceIn(0f, 1f)
         } else {
             (1.129890861f * Math.pow((temp - 60.0).toDouble(), -0.0755148492).toFloat()).coerceIn(0f, 1f)
         }
         
-        // 钃濊壊鍒嗛噺
+        // 蓝色分量
         rgb[2] = if (temp >= 66f) {
             1f
         } else if (temp <= 19f) {
@@ -1331,8 +1398,8 @@ class CameraViewModel @Inject constructor(
             (0.5432067891f * Math.log((temp - 10f).toDouble()).toFloat() - 1.1962540892f).coerceIn(0f, 1f)
         }
         
-        // 褰掍竴鍖栵紙浠?5500K 涓哄熀鍑嗭紝涓?GPU Shader 涓€鑷达級
-        val baseRgb = floatArrayOf(1f, 0.94f, 0.91f) // 5500K 杩戜技鍊?
+        // 归一化（�?5500K 为基准，�?GPU Shader 一致）
+        val baseRgb = floatArrayOf(1f, 0.94f, 0.91f) // 5500K 近似�?
         return floatArrayOf(
             baseRgb[0] / rgb[0].coerceAtLeast(0.001f),
             baseRgb[1] / rgb[1].coerceAtLeast(0.001f),
@@ -1341,41 +1408,41 @@ class CameraViewModel @Inject constructor(
     }
 
     /**
-     * 淇濆瓨鐓х墖鍒扮浉鍐岋紙甯︽柟鍚戜俊鎭級
-     * 鎵€鏈?I/O 鎿嶄綔鍦?IO 璋冨害鍣ㄦ墽琛?
+     * 保存照片到相册（带方向信息）
+     * 所�?I/O 操作�?IO 调度器执�?
      */
     private suspend fun savePhotoToGallery(processedPhoto: ProcessedPhoto) = withContext(Dispatchers.IO) {
         Timber.d("savePhotoToGallery started, data size: ${processedPhoto.data.size} bytes")
         try {
-            // 鑾峰彇璁剧疆鐨勮緭鍑烘牸寮?
+            // 获取设置的输出格�?
             val outputFormat = settings.value.outputFormat
             val isLumaLogEnabled = settings.value.lumaLogEnabled
             
-            // 鏍规嵁杈撳嚭鏍煎紡纭畾 MIME 绫诲瀷鍜屾枃浠舵墿灞曞悕
+            // 根据输出格式确定 MIME 类型和文件扩展名
             val (mimeType, extension) = when (outputFormat) {
                 OutputFormat.JPEG -> "image/jpeg" to "jpg"
                 OutputFormat.HEIF -> "image/heif" to "heic"
                 OutputFormat.RAW_DNG -> "image/x-adobe-dng" to "dng"
-                OutputFormat.RAW_JPEG -> "image/jpeg" to "jpg" // RAW+JPEG 鍏堜繚瀛?JPEG锛孯AW 鍙﹀瓨
+                OutputFormat.RAW_JPEG -> "image/jpeg" to "jpg" // RAW+JPEG 先保�?JPEG，RAW 另存
             }
             
-            // 鐢熸垚鏂囦欢鍚嶏細LUMA_20260105_143052
+            // 生成文件名：LUMA_20260105_143052
             val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
             val timestamp = dateFormat.format(Date())
             val displayName = "LUMA_$timestamp"
 
             Timber.d("Saving photo: $displayName with format: $outputFormat ($mimeType), orientation: ${processedPhoto.orientation}, lumaLog: $isLumaLogEnabled")
 
-            // 濡傛灉鏄?HEIF 鏍煎紡锛岄渶瑕侀噸鏂扮紪鐮?
+            // 如果�?HEIF 格式，需要重新编�?
             val finalData = when (outputFormat) {
                 OutputFormat.HEIF -> {
-                    // 灏?JPEG 瑙ｇ爜骞堕噸鏂扮紪鐮佷负 HEIF
+                    // �?JPEG 解码并重新编码为 HEIF
                     val bitmap = BitmapFactory.decodeByteArray(processedPhoto.data, 0, processedPhoto.data.size)
                     val outputStream = ByteArrayOutputStream()
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 95, outputStream)
-                        // 娉ㄦ剰锛欰ndroid 鍘熺敓涓嶇洿鎺ユ敮鎸?HEIF 缂栫爜锛岃繖閲岀敤 WEBP 浣滀负鏇夸唬
-                        // 瀹為檯涓婇渶瑕佷娇鐢?ImageWriter 鎴栫涓夋柟搴撴潵缂栫爜 HEIF
+                        // 注意：Android 原生不直接支�?HEIF 编码，这里用 WEBP 作为替代
+                        // 实际上需要使�?ImageWriter 或第三方库来编码 HEIF
                     } else {
                         bitmap.compress(Bitmap.CompressFormat.JPEG, 95, outputStream)
                     }
@@ -1385,25 +1452,25 @@ class CameraViewModel @Inject constructor(
                 else -> processedPhoto.data
             }
 
-            // 鍒涘缓鏂囦欢
+            // 创建文件
             val result = mediaStoreHelper.createImageFile(
                 displayName = displayName,
                 mimeType = mimeType
             )
 
             result.onSuccess { (uri, outputStream) ->
-                // 鍐欏叆鏁版嵁
+                // 写入数据
                 outputStream.use { stream ->
                     stream.write(finalData)
                     stream.flush()
                 }
 
-                // 瀹屾垚鍐欏叆
+                // 完成写入
                 mediaStoreHelper.finishPendingFile(uri)
 
-                // 鍐欏叆 EXIF 鏂瑰悜淇℃伅锛堥渶瑕佸湪鏂囦欢鍐欏叆鍚庢搷浣滐級
+                // 写入 EXIF 方向信息（需要在文件写入后操作）
                 try {
-                    // 閫氳繃 ContentResolver 鑾峰彇鏂囦欢鎻忚堪绗︽潵鍐欏叆 EXIF
+                    // 通过 ContentResolver 获取文件描述符来写入 EXIF
                     val pfd = mediaStoreHelper.getContentResolver().openFileDescriptor(uri, "rw")
                     pfd?.use { fd ->
                         val exif = ExifInterface(fd.fileDescriptor)
@@ -1418,7 +1485,7 @@ class CameraViewModel @Inject constructor(
                     Timber.w(e, "Failed to write EXIF orientation")
                 }
 
-                // 鏇存柊鍏冩暟鎹?
+                // 更新元数�?
                 mediaStoreHelper.updateImageMetadata(
                     uri = uri,
                     dateTaken = System.currentTimeMillis()
@@ -1426,13 +1493,13 @@ class CameraViewModel @Inject constructor(
 
                 Timber.d("Photo saved successfully: $uri")
                 
-                // 濡傛灉鍚敤浜?LumaLog锛屼繚瀛?RAW 鎴栫伆鐗?
+                // 如果启用�?LumaLog，保�?RAW 或灰�?
                 if (isLumaLogEnabled) {
                     if (cameraSessionManager.isRawCaptureSupported()) {
-                        // 璁惧鏀寔 RAW锛屼繚瀛?DNG 鏍煎紡
+                        // 设备支持 RAW，保�?DNG 格式
                         saveLumaLogImage(timestamp, _cameraState.value.flashMode)
                     } else {
-                        // 璁惧涓嶆敮鎸?RAW锛屼繚瀛樼伆鐗?
+                        // 设备不支�?RAW，保存灰�?
                         saveLumaLogFlatImage(processedPhoto, timestamp)
                     }
                 }
@@ -1445,19 +1512,19 @@ class CameraViewModel @Inject constructor(
     }
     
     /**
-     * 淇濆瓨 LumaLog RAW 鍥惧儚锛圖NG 鏍煎紡锛屼繚鐣欏叏閮ㄤ紶鎰熷櫒缁嗚妭锛?
-     * 濡傛灉璁惧涓嶆敮鎸?RAW锛屽垯淇濆瓨鐏扮墖锛團lat Profile锛変綔涓哄閫?
+     * 保存 LumaLog RAW 图像（DNG 格式，保留全部传感器细节�?
+     * 如果设备不支�?RAW，则保存灰片（Flat Profile）作为备�?
      */
     private suspend fun saveLumaLogImage(timestamp: String, flashMode: FlashMode) {
         try {
-            // 妫€鏌ヨ澶囨槸鍚︽敮鎸?RAW 鎹曡幏
+            // 检查设备是否支�?RAW 捕获
             if (cameraSessionManager.isRawCaptureSupported()) {
                 Timber.d("Capturing LumaLog RAW (DNG)...")
                 saveLumaLogRawImage(timestamp, flashMode)
             } else {
                 Timber.d("Device does not support RAW, saving flat profile instead...")
-                // 璁惧涓嶆敮鎸?RAW锛屼娇鐢ㄥ綋鍓嶇収鐗囩敓鎴愮伆鐗?
-                // 杩欓儴鍒嗗湪 savePhotoToGallery 涓鐞?
+                // 设备不支�?RAW，使用当前照片生成灰�?
+                // 这部分在 savePhotoToGallery 中处�?
             }
         } catch (e: Exception) {
             Timber.e(e, "Failed to save LumaLog image")
@@ -1465,24 +1532,24 @@ class CameraViewModel @Inject constructor(
     }
     
     /**
-     * 淇濆瓨 LumaLog RAW 鍥惧儚锛圖NG 鏍煎紡锛?
+     * 保存 LumaLog RAW 图像（DNG 格式�?
      */
     private suspend fun saveLumaLogRawImage(timestamp: String, flashMode: FlashMode) {
         try {
-            // 鎹曡幏 RAW 鍥惧儚
+            // 捕获 RAW 图像
             val rawResult = cameraSessionManager.captureRawPhoto(flashMode)
             
             try {
                 val displayName = "LUMA_${timestamp}_RAW"
                 
-                // 鍒涘缓 DNG 鏂囦欢
+                // 创建 DNG 文件
                 val dngResult = mediaStoreHelper.createImageFile(
                     displayName = displayName,
                     mimeType = MediaStoreHelper.MIME_TYPE_DNG
                 )
                 
                 dngResult.onSuccess { (uri, outputStream) ->
-                    // 鍐欏叆 DNG 鏁版嵁
+                    // 写入 DNG 数据
                     val writeResult = dngWriter.writeDng(
                         outputStream = outputStream,
                         image = rawResult.rawImage,
@@ -1509,7 +1576,7 @@ class CameraViewModel @Inject constructor(
                     Timber.e(error, "Failed to create DNG file")
                 }
             } finally {
-                // 蹇呴』鍏抽棴 RAW 鍥惧儚
+                // 必须关闭 RAW 图像
                 rawResult.rawImage.close()
             }
         } catch (e: Exception) {
@@ -1518,14 +1585,14 @@ class CameraViewModel @Inject constructor(
     }
 
     /**
-     * 淇濆瓨 LumaLog 鐏扮墖锛堜繚鐣欏叏閮ㄧ粏鑺傜殑浣庡姣斿害/浣庨ケ鍜屽害鍥惧儚锛?
-     * 鐢ㄤ簬涓嶆敮鎸?RAW 鐨勮澶?
+     * 保存 LumaLog 灰片（保留全部细节的低对比度/低饱和度图像�?
+     * 用于不支�?RAW 的设�?
      */
     private suspend fun saveLumaLogFlatImage(processedPhoto: ProcessedPhoto, timestamp: String) {
         try {
             Timber.d("Generating LumaLog flat image...")
             
-            // 瑙ｇ爜鍘熷鍥惧儚
+            // 解码原始图像
             val originalBitmap = BitmapFactory.decodeByteArray(
                 processedPhoto.data, 0, processedPhoto.data.size
             ) ?: run {
@@ -1533,21 +1600,22 @@ class CameraViewModel @Inject constructor(
                 return
             }
             
-            // 浣跨敤 FlatProfileGenerator 鐢熸垚鐏扮墖
+            // 使用 FlatProfileGenerator 生成灰片
             val flatImage = flatProfileGenerator.generate(originalBitmap)
             
-            // 缂栫爜涓?JPEG
+            // 编码�?JPEG
+            val highBitImage = flatImage.copy(Bitmap.Config.RGBA_F16, false)
             val flatOutputStream = ByteArrayOutputStream()
-            flatImage.compress(Bitmap.CompressFormat.JPEG, 100, flatOutputStream)
+            highBitImage.compress(Bitmap.CompressFormat.PNG, 100, flatOutputStream)
             val flatData = flatOutputStream.toByteArray()
             
-            // 鐢熸垚鐏扮墖鏂囦欢鍚?
+            // 生成灰片文件名
             val flatDisplayName = "LUMA_${timestamp}_FLAT"
             
-            // 淇濆瓨鐏扮墖
+            // 保存灰片
             val flatResult = mediaStoreHelper.createImageFile(
                 displayName = flatDisplayName,
-                mimeType = "image/jpeg"
+                mimeType = MediaStoreHelper.MIME_TYPE_PNG
             )
             
             flatResult.onSuccess { (flatUri, flatOutput) ->
@@ -1558,7 +1626,7 @@ class CameraViewModel @Inject constructor(
                 
                 mediaStoreHelper.finishPendingFile(flatUri)
                 
-                // 鍐欏叆 EXIF 鏂瑰悜淇℃伅
+                // 写入 EXIF 方向信息
                 try {
                     val pfd = mediaStoreHelper.getContentResolver().openFileDescriptor(flatUri, "rw")
                     pfd?.use { fd ->
@@ -1567,7 +1635,7 @@ class CameraViewModel @Inject constructor(
                             ExifInterface.TAG_ORIENTATION,
                             processedPhoto.orientation.toString()
                         )
-                        // 娣诲姞鑷畾涔夋爣绛炬爣璇嗚繖鏄?LumaLog 鐏扮墖
+                        // 添加自定义标签标识这�?LumaLog 灰片
                         exif.setAttribute(
                             ExifInterface.TAG_IMAGE_DESCRIPTION,
                             "LumaLog Flat Profile - Low Contrast, Low Saturation for Maximum Editing Flexibility"
@@ -1588,9 +1656,12 @@ class CameraViewModel @Inject constructor(
                 Timber.e(error, "Failed to save LumaLog flat image")
             }
             
-            // 娓呯悊
+            // 清理
             if (!originalBitmap.isRecycled) {
                 originalBitmap.recycle()
+            }
+            if (!highBitImage.isRecycled) {
+                highBitImage.recycle()
             }
             if (!flatImage.isRecycled) {
                 flatImage.recycle()
@@ -1602,51 +1673,52 @@ class CameraViewModel @Inject constructor(
     }
     
     /**
-     * 鎹曡幏骞朵繚瀛樺疄鍐电収鐗?
+     * 捕获并保存实况照�?
      */
     @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
     private suspend fun captureLivePhotoWithData(photoData: ByteArray, orientation: Int = ExifInterface.ORIENTATION_NORMAL) = withContext(Dispatchers.IO) {
         try {
             Timber.d("Capturing live photo...")
             
-            // 瑙ｇ爜鐓х墖涓?Bitmap
+            // 解码照片�?Bitmap
             val bitmap = BitmapFactory.decodeByteArray(photoData, 0, photoData.size)
             if (bitmap == null) {
                 Timber.e("Failed to decode photo for live photo")
-                // 鍥為€€鍒版櫘閫氱収鐗囦繚瀛?
+                // 回退到普通照片保�?
                 savePhotoToGallery(ProcessedPhoto(photoData, orientation))
                 return@withContext
             }
             
-            // 鑾峰彇杈撳嚭鐩綍
+            // 获取输出目录
             val outputDir = mediaStoreHelper.getLivePhotoOutputDir()
             
-            // 璋冪敤 LivePhotoManager 鎹曡幏瀹炲喌鐓х墖
+            // 调用 LivePhotoManager 捕获实况照片
             val result = livePhotoManager.captureLivePhoto(
                 photo = bitmap,
-                outputDir = outputDir
+                outputDir = outputDir,
+                orientation = orientation
             )
             
             result.onSuccess { livePhotoResult ->
                 Timber.d("Live photo captured: ${livePhotoResult.photoFile}, ${livePhotoResult.videoFile}")
-                // 灏嗘枃浠舵坊鍔犲埌濯掍綋搴?
+                // 将文件添加到媒体�?
                 mediaStoreHelper.addLivePhotoToMediaStore(
                     photoFile = livePhotoResult.photoFile,
                     videoFile = livePhotoResult.videoFile
                 )
             }.onFailure { error ->
                 Timber.e(error, "Failed to capture live photo, falling back to normal photo")
-                // 鍥為€€鍒版櫘閫氱収鐗囦繚瀛?
+                // 回退到普通照片保�?
                 savePhotoToGallery(ProcessedPhoto(photoData, orientation))
             }
         } catch (e: Exception) {
             Timber.e(e, "Error capturing live photo")
-            // 鍥為€€鍒版櫘閫氱収鐗囦繚瀛?
+            // 回退到普通照片保�?
             savePhotoToGallery(ProcessedPhoto(photoData, orientation))
         }
     }
 
-    // ==================== 瑙︽懜瀵圭劍 ====================
+    // ==================== 触摸对焦 ====================
 
     fun onTouchFocus(x: Float, y: Float, viewWidth: Int, viewHeight: Int) {
         hapticFeedback.tick()
@@ -1664,34 +1736,46 @@ class CameraViewModel @Inject constructor(
         }
     }
 
+    private fun selectPreviewSizeForAspect(
+        focalLength: FocalLength,
+        aspectRatio: AspectRatio
+    ): android.util.Size {
+        val fullRatio = if (aspectRatio == AspectRatio.RATIO_FULL) {
+            glPreviewRenderer.getOutputSurfaceRatio()
+        } else {
+            null
+        }
+        return cameraSessionManager.selectPreviewSize(focalLength, aspectRatio, fullRatio)
+    }
+
     fun onLongPress(x: Float, y: Float) {
-        // 闀挎寜閿佸畾 AE/AF
+        // 长按锁定 AE/AF
         toggleAeLock()
         toggleAfLock()
     }
 
-    // ==================== 鐢熷懡鍛ㄦ湡 ====================
+    // ==================== 生命周期 ====================
     
-    // 淇濆瓨鐨勯瑙?Surface锛岀敤浜庢仮澶嶇浉鏈?
+    // 保存的预�?Surface，用于恢复相�?
     private var savedPreviewSurface: Surface? = null
     
     /**
-     * 鏆傚仠鐩告満 - 褰?Activity 杩涘叆鍚庡彴鏃惰皟鐢?
+     * 暂停相机 - �?Activity 进入后台时调�?
      * 
-     * 鍚屾鎵ц浠ョ‘淇濆湪 Activity 鏆傚仠鍓嶅畬鎴?
+     * 同步执行以确保在 Activity 暂停前完�?
      */
     fun pauseCamera() {
         Timber.d("Pausing camera...")
         try {
-            // 鍋滄瀹炲喌鐓х墖缂撳啿褰曞埗
+            // 停止实况照片缓冲录制
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 livePhotoManager.stopBuffering()
             }
             
-            // 鍋滄 GL 娓叉煋鍣紙鏆傚仠妯″紡锛屼繚鐣?EGL 涓婁笅鏂囷級
+            // 停止 GL 渲染器（暂停模式，保�?EGL 上下文）
             glPreviewRenderer.onPause()
             
-            // 鍏抽棴鐩告満浼氳瘽
+            // 关闭相机会话
             cameraSessionManager.closeCamera()
             _cameraState.value = _cameraState.value.copy(isCameraReady = false)
             
@@ -1702,50 +1786,56 @@ class CameraViewModel @Inject constructor(
     }
     
     /**
-     * 鎭㈠鐩告満 - 褰?Activity 浠庡悗鍙版仮澶嶆椂璋冪敤
+     * 恢复相机 - �?Activity 从后台恢复时调用
      * 
-     * 鎭㈠娴佺▼锛?
-     * 1. 妫€鏌?GL 娓叉煋鍣ㄦ槸鍚﹂渶瑕侀噸鏂板垵濮嬪寲
-     * 2. 濡傛灉闇€瑕侀噸鏂板垵濮嬪寲锛岃Е鍙戝畬鏁寸殑閲嶆柊鍒濆鍖栨祦绋?
-     * 3. 濡傛灉涓嶉渶瑕侊紝鐩存帴鎭㈠娓叉煋鍣ㄥ苟閲嶆柊鎵撳紑鐩告満
+     * 恢复流程�?
+     * 1. 检�?GL 渲染器是否需要重新初始化
+     * 2. 如果需要重新初始化，触发完整的重新初始化流�?
+     * 3. 如果不需要，直接恢复渲染器并重新打开相机
      */
     fun resumeCamera() {
         Timber.d("resumeCamera called")
         viewModelScope.launch {
             try {
-                // 棣栧厛鎭㈠ GL 娓叉煋鍣紙杩欎細妫€娴?EGL Surface 鏄惁鏈夋晥锛?
+                // 首先恢复 GL 渲染器（这会检�?EGL Surface 是否有效�?
                 glPreviewRenderer.onResume()
                 
-                // 绛夊緟涓€灏忔鏃堕棿璁╂覆鏌撳櫒瀹屾垚鎭㈠妫€鏌?
+                // 等待一小段时间让渲染器完成恢复检�?
                 kotlinx.coroutines.delay(50)
                 
-                // 妫€鏌ユ覆鏌撳櫒鏄惁闇€瑕侀噸鏂板垵濮嬪寲锛圗GL Surface 澶辨晥锛?
+                // 检查渲染器是否需要重新初始化（EGL Surface 失效�?
                 if (glPreviewRenderer.needsReinitialization()) {
                     Timber.d("GL Renderer needs reinitialization, triggering full reinitialization")
-                    // 瑙﹀彂瀹屾暣鐨勯噸鏂板垵濮嬪寲娴佺▼
-                    // 鍥炶皟鍑芥暟浼氬湪閲嶆柊鍒濆鍖栧畬鎴愬悗鑷姩閲嶆柊鎵撳紑鐩告満
+                    // 触发完整的重新初始化流程
+                    // 回调函数会在重新初始化完成后自动重新打开相机
                     glPreviewRenderer.triggerReinitialization()
                     return@launch
                 }
                 
-                // 妫€鏌ユ覆鏌撳櫒鏄惁灏辩华
+                // 检查渲染器是否就绪
                 if (!glPreviewRenderer.isReady()) {
                     Timber.d("GL Renderer not ready, waiting for reinitialization")
                     shouldResumeCamera = true
                     return@launch
                 }
                 
-                // 妫€鏌ユ槸鍚︽湁鏈夋晥鐨?Surface 鍙敤
+                // 检查是否有有效�?Surface 可用
                 val cameraSurface = glPreviewRenderer.getCameraSurface()
                 if (cameraSurface != null && cameraSurface.isValid) {
                     Timber.d("Surface is valid, reopening camera...")
-                    // Surface 鏈夋晥锛岀洿鎺ラ噸鏂版墦寮€鐩告満
+                    // Surface 有效，直接重新打开相机
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
                         val currentFocalLength = _cameraState.value.currentFocalLength
                         val recordingSurface = ensureLivePhotoSurface()
+                        val previewSize = selectPreviewSizeForAspect(
+                            currentFocalLength,
+                            _cameraState.value.aspectRatio
+                        )
+                        glPreviewRenderer.setCameraBufferSize(previewSize.width, previewSize.height)
                         val result = cameraSessionManager.openCamera(
                             focalLength = currentFocalLength,
                             previewSurface = cameraSurface,
+                            previewSize = previewSize,
                             recordingSurface = recordingSurface
                         )
                         result.onSuccess {
@@ -1755,14 +1845,14 @@ class CameraViewModel @Inject constructor(
                             applyPreviewEffects()
                             glPreviewRenderer.startRendering()
                             
-                            // 濡傛灉瀹炲喌鍔熻兘宸插惎鐢紝鎭㈠缂撳啿褰曞埗
+                            // 如果实况功能已启用，恢复缓冲录制
                             if (_cameraState.value.isLivePhotoEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                                 startLivePhotoBuffering()
                             }
                         }.onFailure { error ->
                             Timber.e(error, "Failed to resume camera")
                             _cameraState.value = _cameraState.value.copy(isCameraReady = false)
-                            // 灏濊瘯璁剧疆鏍囧織绛夊緟閲嶆柊鍒濆鍖?
+                            // 尝试设置标志等待重新初始�?
                             shouldResumeCamera = true
                         }
                     }
@@ -1783,3 +1873,6 @@ class CameraViewModel @Inject constructor(
         cameraController.release()
     }
 }
+
+
+

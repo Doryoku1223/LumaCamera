@@ -429,6 +429,7 @@ private fun GLPreviewTextureView(
                     
                     override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
                         timber.log.Timber.d("onSurfaceTextureDestroyed, pausing GL renderer")
+                        onSurfaceDestroyed?.invoke()
                         // 暂停渲染但不完全释放，以便快速恢复
                         glRenderer.onPause()
                         

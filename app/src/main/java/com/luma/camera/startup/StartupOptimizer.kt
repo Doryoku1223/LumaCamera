@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.luma.camera.startup
 
 import android.app.Application
